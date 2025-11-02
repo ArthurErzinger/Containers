@@ -1,7 +1,7 @@
 # Compiler and flags
 CC = gcc
 # Per the project PDF: -Wall, -Wextra. Also adding -g for debugging, -Iinclude to find headers, and -std=c23 for the C23 standard.
-CFLAGS = -Wall -Wextra -g -Iinclude -std=c23
+CFLAGS = -Wall -Wextra -g -Iinclude -std=c2x
 LDFLAGS =
 
 # Project name
