@@ -7,18 +7,34 @@
 typedef struct {
     int pid;
 
-    // Métricas de CPU (lidas do /proc/[pid]/stat)
+    // Métricas de CPU (lidas do /proc/[pid]/stat e /proc/[pid]/status)
     unsigned long utime;       // Tempo de usuário (em jiffies)
     unsigned long stime;       // Tempo de sistema (em jiffies)
+    unsigned long starttime_jiffies; // Tempo de início do processo (em jiffies desde o boot do sistema)
+    unsigned long minflt;      // Minor page faults
+    unsigned long majflt;      // Major page faults
     long num_threads;          // Número de threads
+    long voluntary_ctxt_switches;
+    long nonvoluntary_ctxt_switches;
+    double app_uptime_seconds; // Tempo de vida do aplicativo em segundos
 
     // Métricas de Memória (lidas do /proc/[pid]/status)
     long vm_size;              // Memória virtual (VmSize) em KB
     long vm_rss;               // Memória residente (VmRSS) em KB
+    long vm_swap;              // Memória em swap (VmSwap) em KB
 
     // Métricas de I/O (lidas do /proc/[pid]/io)
     unsigned long long rchar;  // Bytes lidos
     unsigned long long wchar;  // Bytes escritos
+    unsigned long long syscr;  // Read syscalls
+    unsigned long long syscw;  // Write syscalls
+
+    // Métricas de Rede (lidas do /proc/[pid]/net/dev)
+    unsigned long long net_rx_bytes;
+    unsigned long long net_tx_bytes;
+    unsigned long long net_rx_packets;
+    unsigned long long net_tx_packets;
+    long net_connections;
 
 } ProcessMetrics;
 

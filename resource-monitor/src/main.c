@@ -1,12 +1,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <fcntl.h>
+#include <termios.h>
 #include "process_selector.h"
 #include "process_monitor.h"
 #include "monitor.h"
 #include "namespace.h"
 #include "cgroup.h"
 #include <string.h>
+#include <time.h>
 #include "process_tree.h"
 
 static void flush_stdin_line(void) {
@@ -23,6 +28,32 @@ static void wait_for_enter(void) {
     while ((c = getchar()) != '\n' && c != EOF) {
         // aguarda Enter do usuário
     }
+}
+
+// Função para verificar se uma tecla foi pressionada sem bloquear
+static int kbhit(void) {
+    struct termios oldt, newt;
+    int ch;
+    int oldf;
+
+    tcgetattr(STDIN_FILENO, &oldt);
+    newt = oldt;
+    newt.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+    oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
+    fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
+
+    ch = getchar();
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+    fcntl(STDIN_FILENO, F_SETFL, oldf);
+
+    if (ch != EOF) {
+        ungetc(ch, stdin);
+        return 1;
+    }
+
+    return 0;
 }
 
 static void display_metrics_for_pid(pid_t pid) {
@@ -202,8 +233,8 @@ void print_main_menu() {
 
 void print_profiler_submenu() {
     printf("\n  --- [1] Resource Profiler ---\n");
-    printf("    ├─ [1] Monitorar processo por PID\n");
-    printf("    ├─ [2] Exibir métricas de CPU, Memória e I/O\n");
+    printf("    ├─ [1] Monitorar processo continuamente (Pressione Enter para parar)\n");
+    printf("    ├─ [2] Exibir métricas de um processo (snapshot)\n");
     printf("    ├─ [3] Calcular percentuais de uso\n");
     printf("    ├─ [4] Exportar métricas em CSV\n");
     printf("    └─ [5] Voltar ao menu principal\n\n");
@@ -244,9 +275,49 @@ void handle_profiler_menu() {
     while (choice != 5) {
         print_profiler_submenu();
         printf("Opção do Profiler: ");
-        scanf("%d", &choice);
+        if (scanf("%d", &choice) != 1) {
+            flush_stdin_line(); // Limpa a entrada inválida
+            choice = 0; // Reseta a escolha para evitar loop infinito
+            continue;
+        }
+        flush_stdin_line(); // Limpa o newline após o scanf
 
         if (choice == 1) {
+            int selected_pid = select_process();
+            if (selected_pid != -1) {
+                int interval = 3; // Intervalo padrão de 3 segundos
+                printf("Digite o intervalo de monitoramento em segundos (padrão: 3): ");
+                int user_interval = 0;
+                if (scanf("%d", &user_interval) == 1) {
+                    if (user_interval > 0) {
+                        interval = user_interval;
+                    }
+                }
+                flush_stdin_line(); // Limpa o buffer após ler o intervalo
+
+
+                printf("\nIniciando monitoramento... Pressione Enter para parar.\n");
+                sleep(2); // Dá tempo para o usuário ler a mensagem
+
+                time_t start_time = time(NULL); // Registra o tempo de início
+
+                while (!kbhit()) {
+                    system("clear");
+                    time_t current_time = time(NULL);
+                    double elapsed_seconds = difftime(current_time, start_time);
+                    printf("Monitorando PID: %d (Intervalo: %ds) | Pressione Enter para parar | Tempo decorrido: %.0fs\n\n", selected_pid, interval, elapsed_seconds);
+                    ProcessMetrics metrics;
+                    if (get_process_metrics(selected_pid, &metrics) == 0) {
+                        print_process_metrics(&metrics);
+                    } else {
+                        fprintf(stderr, "\nErro ao coletar métricas para o PID %d. O processo pode não existir mais.\n", selected_pid);
+                        break; // Sai do loop se o processo sumir
+                    }
+                    sleep(interval);
+                }
+                flush_stdin_line(); // Limpa o Enter que parou o loop
+            }
+        } else if (choice == 2) {
             int selected_pid = select_process();
             if (selected_pid != -1) {
                 ProcessMetrics metrics;
@@ -255,28 +326,17 @@ void handle_profiler_menu() {
                 } else {
                     fprintf(stderr, "\nErro ao coletar métricas para o PID %d. O processo pode não existir mais.\n", selected_pid);
                 }
-                flush_stdin_line();
                 wait_for_enter();
             }
         } else if (choice == 3) {
-            printf("Digite o PID do processo para calcular os percentuais: ");
-            pid_t pid;
-            if (scanf("%d", &pid) != 1) {
-                fprintf(stderr, "Entrada inválida. Por favor, insira um número.\n");
-                flush_stdin_line();
-            } else {
-                flush_stdin_line();
+            int pid = select_process();
+            if (pid != -1) {
                 calculate_and_display_percentages(pid);
                 wait_for_enter();
             }
         } else if (choice == 4) {
-            printf("Digite o PID do processo para exportar as métricas: ");
-            pid_t pid;
-            if (scanf("%d", &pid) != 1) {
-                fprintf(stderr, "Entrada inválida. Por favor, insira um número.\n");
-                flush_stdin_line();
-            } else {
-                flush_stdin_line();
+            int pid = select_process();
+            if (pid != -1) {
                 export_metrics_to_csv(pid);
                 wait_for_enter();
             }
