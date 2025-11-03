@@ -3,6 +3,189 @@
 #include <unistd.h>
 #include "process_selector.h"
 #include "process_monitor.h"
+#include "monitor.h"
+#include "namespace.h"
+#include "cgroup.h"
+#include <string.h>
+#include "process_tree.h"
+
+static void flush_stdin_line(void) {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF) {
+        // descarta caracteres remanescentes
+    }
+}
+
+static void wait_for_enter(void) {
+    printf("\nPressione Enter para continuar...");
+    fflush(stdout);
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF) {
+        // aguarda Enter do usuário
+    }
+}
+
+static void display_metrics_for_pid(pid_t pid) {
+    CpuMetrics cpu;
+    MemoryMetrics memory;
+    IoMetrics io;
+
+    if (get_cpu_metrics(pid, &cpu) != 0) {
+        perror("Erro ao coletar métricas de CPU");
+        return;
+    }
+    if (get_memory_metrics(pid, &memory) != 0) {
+        perror("Erro ao coletar métricas de memória");
+        return;
+    }
+    if (get_io_metrics(pid, &io) != 0) {
+        perror("Erro ao coletar métricas de I/O");
+        io.pid = pid;
+        io.read_bytes = 0;
+        io.write_bytes = 0;
+    }
+
+    long ticks_per_sec = sysconf(_SC_CLK_TCK);
+
+    printf("\n--- Métricas para o Processo PID: %d ---\n", pid);
+    printf("CPU:\n");
+    printf("  - Tempo de Usuário:   %.2f segundos\n", (double)cpu.utime / ticks_per_sec);
+    printf("  - Tempo de Sistema:   %.2f segundos\n", (double)cpu.stime / ticks_per_sec);
+    printf("  - Número de Threads:  %ld\n", cpu.num_threads);
+
+    printf("Memória:\n");
+    printf("  - Memória Virtual (VmSize): %ld KB\n", memory.vm_size_kb);
+    printf("  - Memória Residente (VmRSS): %ld KB\n", memory.vm_rss_kb);
+
+    printf("I/O:\n");
+    printf("  - Bytes Lidos:   %llu\n", io.read_bytes);
+    printf("  - Bytes Escritos:  %llu\n", io.write_bytes);
+    printf("----------------------------------------\n");
+}
+
+static void calculate_and_display_percentages(pid_t pid) {
+    unsigned long total_cpu1, total_cpu2;
+    unsigned long long total_process_ticks1 = 0, total_process_ticks2 = 0;
+    unsigned long long total_read_bytes1 = 0, total_read_bytes2 = 0;
+    unsigned long long total_write_bytes1 = 0, total_write_bytes2 = 0;
+
+    // --- Primeira Medição --- //
+    if (get_global_cpu_time(&total_cpu1) != 0) {
+        perror("Erro ao ler o tempo total de CPU (1)");
+        return;
+    }
+
+    PidList children1 = find_child_pids(pid);
+    pid_t *all_pids1 = malloc((children1.count + 1) * sizeof(pid_t));
+    if (!all_pids1) { free_pid_list(&children1); return; }
+    all_pids1[0] = pid;
+    memcpy(all_pids1 + 1, children1.pids, children1.count * sizeof(pid_t));
+
+    for (int i = 0; i < children1.count + 1; ++i) {
+        CpuMetrics cpu;
+        IoMetrics io;
+        if (get_cpu_metrics(all_pids1[i], &cpu) == 0) {
+            total_process_ticks1 += cpu.utime + cpu.stime;
+        }
+        if (get_io_metrics(all_pids1[i], &io) == 0) {
+            total_read_bytes1 += io.read_bytes;
+            total_write_bytes1 += io.write_bytes;
+        }
+    }
+
+    free(all_pids1);
+    free_pid_list(&children1);
+
+    printf("Coletando métricas por 1 segundo...\n");
+    sleep(1);
+
+    // --- Segunda Medição --- //
+    if (get_global_cpu_time(&total_cpu2) != 0) {
+        perror("Erro ao ler o tempo total de CPU (2)");
+        return;
+    }
+
+    PidList children2 = find_child_pids(pid);
+    pid_t *all_pids2 = malloc((children2.count + 1) * sizeof(pid_t));
+    if (!all_pids2) { free_pid_list(&children2); return; }
+    all_pids2[0] = pid;
+    memcpy(all_pids2 + 1, children2.pids, children2.count * sizeof(pid_t));
+
+    for (int i = 0; i < children2.count + 1; ++i) {
+        CpuMetrics cpu;
+        IoMetrics io;
+        if (get_cpu_metrics(all_pids2[i], &cpu) == 0) {
+            total_process_ticks2 += cpu.utime + cpu.stime;
+        }
+        if (get_io_metrics(all_pids2[i], &io) == 0) {
+            total_read_bytes2 += io.read_bytes;
+            total_write_bytes2 += io.write_bytes;
+        }
+    }
+
+    free(all_pids2);
+    free_pid_list(&children2);
+
+    // --- Cálculos --- //
+    unsigned long process_time_delta = total_process_ticks2 - total_process_ticks1;
+    unsigned long total_time_delta = total_cpu2 - total_cpu1;
+
+    double cpu_percentage = 0.0;
+    if (total_time_delta > 0) {
+        cpu_percentage = 100.0 * (double)process_time_delta / (double)total_time_delta;
+    }
+
+    double read_rate_bps = (double)(total_read_bytes2 - total_read_bytes1);
+    double write_rate_bps = (double)(total_write_bytes2 - total_write_bytes1);
+
+    printf("\n--- Percentuais e Taxas para a Árvore de Processos do PID: %d ---\n", pid);
+    printf("Uso de CPU: %.2f%%\n", cpu_percentage);
+    printf("Taxa de Leitura I/O: %.2f bytes/s\n", read_rate_bps);
+    printf("Taxa de Escrita I/O: %.2f bytes/s\n", write_rate_bps);
+    printf("--------------------------------------------------------------------\n");
+}
+
+static void export_metrics_to_csv(pid_t pid) {
+    CpuMetrics cpu;
+    MemoryMetrics memory;
+    IoMetrics io;
+
+    if (get_cpu_metrics(pid, &cpu) != 0) {
+        perror("Erro ao coletar métricas de CPU para exportação");
+        return;
+    }
+    if (get_memory_metrics(pid, &memory) != 0) {
+        perror("Erro ao coletar métricas de memória para exportação");
+        return;
+    }
+    if (get_io_metrics(pid, &io) != 0) {
+        perror("Aviso: Não foi possível coletar métricas de I/O para exportação");
+        io.read_bytes = 0;
+        io.write_bytes = 0;
+    }
+
+    char filename[256];
+    printf("Digite o nome do arquivo CSV para exportar (ex: metricas.csv): ");
+    scanf("%255s", filename);
+    flush_stdin_line();
+
+    FILE *fp = fopen(filename, "w");
+    if (!fp) {
+        perror("Erro ao abrir o arquivo para escrita");
+        return;
+    }
+
+    // Header
+    fprintf(fp, "pid,utime,stime,num_threads,vm_size_kb,vm_rss_kb,read_bytes,write_bytes\n");
+    // Data
+    fprintf(fp, "%d,%lu,%lu,%ld,%ld,%ld,%llu,%llu\n",
+            pid, cpu.utime, cpu.stime, cpu.num_threads,
+            memory.vm_size_kb, memory.vm_rss_kb,
+            io.read_bytes, io.write_bytes);
+
+    fclose(fp);
+    printf("Métricas exportadas com sucesso para '%s'\n", filename);
+}
 
 // --- Funções para exibir os menus ---
 
@@ -72,13 +255,31 @@ void handle_profiler_menu() {
                 } else {
                     fprintf(stderr, "\nErro ao coletar métricas para o PID %d. O processo pode não existir mais.\n", selected_pid);
                 }
-                printf("\nPressione Enter para continuar...");
-                while(getchar() != '\n'); // Limpa o buffer de entrada antigo
-                getchar(); // Espera pelo Enter
+                flush_stdin_line();
+                wait_for_enter();
             }
-        } else if (choice > 1 && choice <= 4) {
-            printf("\n[AVISO] Opção 1.%d não implementada.\n", choice);
-            sleep(2);
+        } else if (choice == 3) {
+            printf("Digite o PID do processo para calcular os percentuais: ");
+            pid_t pid;
+            if (scanf("%d", &pid) != 1) {
+                fprintf(stderr, "Entrada inválida. Por favor, insira um número.\n");
+                flush_stdin_line();
+            } else {
+                flush_stdin_line();
+                calculate_and_display_percentages(pid);
+                wait_for_enter();
+            }
+        } else if (choice == 4) {
+            printf("Digite o PID do processo para exportar as métricas: ");
+            pid_t pid;
+            if (scanf("%d", &pid) != 1) {
+                fprintf(stderr, "Entrada inválida. Por favor, insira um número.\n");
+                flush_stdin_line();
+            } else {
+                flush_stdin_line();
+                export_metrics_to_csv(pid);
+                wait_for_enter();
+            }
         } else if (choice != 5) {
             printf("Opção inválida.\n");
             sleep(1);

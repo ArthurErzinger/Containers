@@ -8,12 +8,12 @@
 int select_process() {
     DIR *dir;
     struct dirent *entry;
-    char path[256];
+    char path[512];
     char comm[256];
     FILE *fp;
 
     printf("===== Lista de Processos em Execução =====\n");
-    printf("% -10s %s\n", "PID", "Comando");
+    printf("%-10s %s\n", "PID", "Comando");
     printf("------------------------------------------\n");
 
     if ((dir = opendir("/proc")) == NULL) {
@@ -33,13 +33,16 @@ int select_process() {
 
         if (is_pid) {
             // Constrói o caminho para o arquivo comm
-            snprintf(path, sizeof(path), "/proc/%s/comm", entry->d_name);
+            int written = snprintf(path, sizeof(path), "/proc/%s/comm", entry->d_name);
+            if (written < 0 || (size_t)written >= sizeof(path)) {
+                continue;
+            }
             fp = fopen(path, "r");
             if (fp) {
                 if (fgets(comm, sizeof(comm), fp) != NULL) {
                     // Remove a nova linha do final do nome do comando
                     comm[strcspn(comm, "\n")] = 0;
-                    printf("% -10s %s\n", entry->d_name, comm);
+                    printf("%-10s %s\n", entry->d_name, comm);
                 }
                 fclose(fp);
             }
