@@ -6,6 +6,7 @@
 // Estrutura para armazenar as métricas coletadas de um processo
 typedef struct {
     int pid;
+    char comm[256];
 
     // Métricas de CPU (lidas do /proc/[pid]/stat e /proc/[pid]/status)
     unsigned long utime;       // Tempo de usuário (em jiffies)

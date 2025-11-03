@@ -143,8 +143,8 @@ int get_process_metrics(int pid, ProcessMetrics *metrics) {
         return -1;
     }
     // (1) pid (2) comm ... (10) minflt (12) majflt (14) utime (15) stime ... (20) num_threads (22) starttime
-    int result = fscanf(fp, "%*d %*s %*c %*d %*d %*d %*d %*d %*u %lu %*u %lu %*u %lu %lu %*d %*d %*d %*d %ld %*d %lu",
-                        &metrics->minflt, &metrics->majflt, &metrics->utime, &metrics->stime, &metrics->num_threads, &metrics->starttime_jiffies);
+    int result = fscanf(fp, "%*d (%255[^)]) %*c %*d %*d %*d %*d %*d %*u %lu %*u %lu %*u %lu %lu %*d %*d %*d %*d %ld %*d %lu",
+                        metrics->comm, &metrics->minflt, &metrics->majflt, &metrics->utime, &metrics->stime, &metrics->num_threads, &metrics->starttime_jiffies);
     fclose(fp);
     if (result < 6) return -1;
 
