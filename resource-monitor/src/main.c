@@ -38,7 +38,6 @@ static int select_process() {
     }
 
     while ((entry = readdir(dir)) != NULL) {
-        // Verifica se o nome da entrada é um número (PID)
         int is_pid = 1;
         for (char *p = entry->d_name; *p; p++) {
             if (!isdigit(*p)) {
@@ -46,14 +45,11 @@ static int select_process() {
                 break;
             }
         }
-
         if (is_pid) {
-            // Constrói o caminho para o arquivo comm
             snprintf(path, sizeof(path), "/proc/%s/comm", entry->d_name);
             fp = fopen(path, "r");
             if (fp) {
                 if (fgets(comm, sizeof(comm), fp) != NULL) {
-                    // Remove a nova linha do final do nome do comando
                     comm[strcspn(comm, "\n")] = 0;
                     printf("%-10s %s\n", entry->d_name, comm);
                 }
@@ -62,21 +58,33 @@ static int select_process() {
         }
     }
     closedir(dir);
-
     printf("------------------------------------------\n");
-    printf("Digite o PID do processo que deseja monitorar: ");
 
     int selected_pid = -1;
-    if (scanf("%d", &selected_pid) != 1) {
-        // Limpa o buffer de entrada em caso de erro
+    while (1) {
+        printf("Digite o PID do processo que deseja monitorar (ou 0 para voltar): ");
+        if (scanf("%d", &selected_pid) != 1) {
+            flush_stdin_line();
+            fprintf(stderr, "Entrada inválida. Por favor, insira um número.\n");
+            continue;
+        }
         flush_stdin_line();
-        fprintf(stderr, "Entrada inválida. Por favor, insira um número.\n");
-        return -1;
+
+        if (selected_pid == 0) {
+            return -1; // Opção para o usuário voltar
+        }
+        
+        // Verifica a existência e permissão do processo
+        snprintf(path, sizeof(path), "/proc/%d", selected_pid);
+        if (access(path, R_OK) == 0) {
+            // O diretório do processo existe e temos permissão de leitura
+            break; 
+        } else {
+            fprintf(stderr, "Erro: Processo com PID %d não encontrado ou acesso negado.\n", selected_pid);
+            fprintf(stderr, "Verifique se o PID existe e se você tem permissão para acessá-lo.\n\n");
+            selected_pid = -1;
+        }
     }
-
-    // Limpa o restante da linha (ex: o caractere '\n') que o scanf deixou no buffer
-    flush_stdin_line();
-
     return selected_pid;
 }
 
@@ -171,7 +179,7 @@ static void run_continuous_monitoring(pid_t pid, int interval, FILE *csv_output)
 
     // Coleta inicial
     if (get_cpu_metrics(pid, &cpu1) != 0 || get_io_metrics(pid, &io1) != 0 || get_global_cpu_time(&global_cpu1) != 0) {
-        fprintf(stderr, "Erro ao coletar métricas iniciais para o PID %d. O processo existe e você tem permissão?\n", pid);
+        fprintf(stderr, "Erro ao coletar métricas iniciais para o PID %d. O processo pode ter terminado inesperadamente.\n", pid);
         return;
     }
 
