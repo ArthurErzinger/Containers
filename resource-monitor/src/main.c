@@ -352,8 +352,7 @@ void handle_namespace_menu() {
         if (choice == 1) {
              int pid = select_process();
              if (pid != -1) {
-                // list_namespaces_for_pid(pid);
-                printf("\n[AVISO] Funcionalidade ainda não implementada.\n");
+                list_process_namespaces(pid);
                 wait_for_enter();
              }
         } else if (choice != 2) {
