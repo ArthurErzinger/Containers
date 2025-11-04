@@ -1,0 +1,1 @@
+Antes da execução de QUALQUER PROMPT, o gemini deve ler o arquivo projeto.txt

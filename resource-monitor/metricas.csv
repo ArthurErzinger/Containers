@@ -1,2 +1,0 @@
-pid,utime,stime,num_threads,vm_size_kb,vm_rss_kb,read_bytes,write_bytes
-17813,2,1,945003,1459697616,64352,0,0
