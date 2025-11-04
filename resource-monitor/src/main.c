@@ -277,7 +277,9 @@ void print_profiler_submenu() {
 void print_namespace_submenu() {
     printf("\n  --- [2] Namespace Analyzer ---\n");
     printf("    ├─ [1] Listar namespaces de um processo\n");
-    printf("    └─ [2] Voltar ao menu principal\n\n");
+    printf("    ├─ [2] Encontrar processos em um namespace\n");
+    printf("    ├─ [3] Comparar namespaces entre dois processos\n");
+    printf("    └─ [4] Voltar ao menu principal\n\n");
 }
 
 void print_cgroup_submenu() {
@@ -347,7 +349,7 @@ void handle_profiler_menu() {
 
 void handle_namespace_menu() {
     int choice = 0;
-    while (choice != 2) {
+    while (choice != 4) {
         print_namespace_submenu();
         printf("Opção do Namespace Analyzer: ");
         if (scanf("%d", &choice) != 1) {
@@ -357,15 +359,40 @@ void handle_namespace_menu() {
         }
         flush_stdin_line();
 
-        if (choice == 1) {
-             int pid = select_process();
-             if (pid != -1) {
-                list_process_namespaces(pid);
+        switch (choice) {
+            case 1: {
+                int pid = select_process();
+                if (pid != -1) {
+                    list_process_namespaces(pid);
+                    wait_for_enter();
+                }
+                break;
+            }
+            case 2: {
+                find_processes_in_namespace();
                 wait_for_enter();
-             }
-        } else if (choice != 2) {
-            printf("Opção inválida.\n");
-            sleep(1);
+                break;
+            }
+            case 3: {
+                printf("\n--- Selecione o PRIMEIRO processo ---\n");
+                int pid1 = select_process();
+                if (pid1 != -1) {
+                    printf("\n--- Selecione o SEGUNDO processo ---\n");
+                    int pid2 = select_process();
+                    if (pid2 != -1) {
+                        compare_process_namespaces(pid1, pid2);
+                        wait_for_enter();
+                    }
+                }
+                break;
+            }
+            case 4:
+                // Voltar ao menu principal
+                break;
+            default:
+                printf("Opção inválida.\n");
+                sleep(1);
+                break;
         }
     }
 }
