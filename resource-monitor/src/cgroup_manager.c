@@ -397,7 +397,7 @@ int apply_cpu_limit(const char* cgroup_name, int percentage) {
     }
 }
 
-int apply_memory_limit(const char* cgroup_name, long long bytes) {
+int apply_memory_limit(const char* cgroup_name, long long bytes, long long swap_bytes) {
     char full_path[1024];
     if (cgroup_name[0] != '/') {
         snprintf(full_path, sizeof(full_path), "/sys/fs/cgroup/%s", cgroup_name);
@@ -407,13 +407,37 @@ int apply_memory_limit(const char* cgroup_name, long long bytes) {
     }
 
     char limit_str[32];
-    snprintf(limit_str, sizeof(limit_str), "%lld", bytes);
+    int result = 0; // Assume success initially
 
+    // Apply main memory limit
+    snprintf(limit_str, sizeof(limit_str), "%lld", bytes);
     if (is_cgroup_v2()) {
-        return write_to_cgroup_file(full_path, "memory.max", limit_str);
+        if (write_to_cgroup_file(full_path, "memory.max", limit_str) != 0) {
+            result = -1;
+        }
     } else {
         char mem_path[2048];
         snprintf(mem_path, sizeof(mem_path), "/sys/fs/cgroup/memory/%s", cgroup_name);
-        return write_to_cgroup_file(mem_path, "memory.limit_in_bytes", limit_str);
+        if (write_to_cgroup_file(mem_path, "memory.limit_in_bytes", limit_str) != 0) {
+            result = -1;
+        }
     }
+
+    // Apply swap memory limit, if provided (swap_bytes >= 0 indicates a limit is desired)
+    if (swap_bytes >= 0) {
+        snprintf(limit_str, sizeof(limit_str), "%lld", swap_bytes);
+        if (is_cgroup_v2()) {
+            if (write_to_cgroup_file(full_path, "memory.swap.max", limit_str) != 0) {
+                result = -1; // Report failure for swap, even if main memory worked
+            }
+        } else {
+            char memsw_path[2048];
+            snprintf(memsw_path, sizeof(memsw_path), "/sys/fs/cgroup/memory/%s", cgroup_name); // memsw is under memory controller
+            if (write_to_cgroup_file(memsw_path, "memory.memsw.limit_in_bytes", limit_str) != 0) {
+                result = -1;
+            }
+        }
+    }
+
+    return result;
 }

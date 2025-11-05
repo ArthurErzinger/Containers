@@ -508,21 +508,39 @@ void handle_cgroup_menu() {
                                 }
                             } else if (limit_choice == 2) {
                                 long long megabytes = 0;
-                                printf("Digite o limite de memória em Megabytes (MB): ");
+                                printf("Digite o limite de memória principal em Megabytes (MB): ");
                                 if (scanf("%lld", &megabytes) == 1) {
                                     flush_stdin_line();
                                     long long bytes = megabytes * 1024 * 1024;
-                                    if (apply_memory_limit(cgroup_name, bytes) != 0) {
-                                        if (errno == EACCES || errno == EPERM) {
-                                            fprintf(stderr, "\nErro: Falha ao aplicar limite de memória. Permissão negada.\n");
-                                            fprintf(stderr, "Esta operação requer privilégios de administrador. Tente executar o programa com 'sudo'.\n");
+
+                                    long long swap_megabytes = -1; // -1 indicates no swap limit
+                                    printf("Digite o limite de memória SWAP em Megabytes (MB) (0 para desabilitar, -1 para ilimitado): ");
+                                    if (scanf("%lld", &swap_megabytes) == 1) {
+                                        flush_stdin_line();
+                                        long long swap_bytes = swap_megabytes * 1024 * 1024;
+                                        if (swap_megabytes == -1) { // User wants unlimited swap
+                                            swap_bytes = -1; // Pass -1 to function to indicate unlimited
+                                        }
+
+                                        if (apply_memory_limit(cgroup_name, bytes, swap_bytes) != 0) {
+                                            if (errno == EACCES || errno == EPERM) {
+                                                fprintf(stderr, "\nErro: Falha ao aplicar limite de memória. Permissão negada.\n");
+                                                fprintf(stderr, "Esta operação requer privilégios de administrador. Tente executar o programa com 'sudo'.\n");
+                                            } else {
+                                                perror("\nFalha ao aplicar limite de memória");
+                                            }
                                         } else {
-                                            perror("\nFalha ao aplicar limite de memória");
+                                            printf("\nLimite de memória aplicado com sucesso!\n");
                                         }
                                     } else {
-                                        printf("\nLimite de memória aplicado com sucesso!\n");
+                                        flush_stdin_line();
+                                        printf("Entrada inválida para limite de SWAP.\n");
                                     }
+                                } else {
+                                    flush_stdin_line();
+                                    printf("Entrada inválida para limite de memória principal.\n");
                                 }
+
                             } else {
                                 printf("Opção de limite inválida.\n");
                             }

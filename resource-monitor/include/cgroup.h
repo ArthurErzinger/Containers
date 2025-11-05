@@ -82,7 +82,7 @@ int apply_cpu_limit(const char* cgroup_name, int percentage);
  * @param bytes The memory limit in bytes.
  * @return 0 on success, -1 on failure.
  */
-int apply_memory_limit(const char* cgroup_name, long long bytes);
+int apply_memory_limit(const char* cgroup_name, long long bytes, long long swap_bytes);
 
 
 #endif //CGROUP_H
