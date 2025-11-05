@@ -2,6 +2,7 @@
 #define CGROUP_H
 
 #include <stdint.h>
+#include <sys/types.h>
 
 // Struct to hold CPU metrics from a cgroup
 typedef struct {
@@ -47,6 +48,41 @@ typedef struct {
  *                    cgroup v1 and v2 hierarchies.
  */
 void display_cgroup_metrics(const char* cgroup_path);
+
+/**
+ * @brief Creates a new cgroup.
+ *
+ * @param cgroup_name The name of the cgroup to create (e.g., "my-group").
+ * @return 0 on success, -1 on failure (and sets errno).
+ */
+int create_cgroup(const char* cgroup_name);
+
+/**
+ * @brief Moves a process to a cgroup.
+ *
+ * @param pid The ID of the process to move.
+ * @param cgroup_name The name/path of the target cgroup.
+ * @return 0 on success, -1 on failure (and sets errno).
+ */
+int move_process_to_cgroup(pid_t pid, const char* cgroup_name);
+
+/**
+ * @brief Applies a CPU limit to a cgroup.
+ *
+ * @param cgroup_name The name/path of the target cgroup.
+ * @param percentage The CPU limit in percentage (e.g., 50 for 50%).
+ * @return 0 on success, -1 on failure.
+ */
+int apply_cpu_limit(const char* cgroup_name, int percentage);
+
+/**
+ * @brief Applies a memory limit to a cgroup.
+ *
+ * @param cgroup_name The name/path of the target cgroup.
+ * @param bytes The memory limit in bytes.
+ * @return 0 on success, -1 on failure.
+ */
+int apply_memory_limit(const char* cgroup_name, long long bytes);
 
 
 #endif //CGROUP_H

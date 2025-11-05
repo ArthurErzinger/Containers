@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <inttypes.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 // --- Utility Functions ---
 
@@ -253,4 +254,166 @@ void display_cgroup_metrics(const char* cgroup_path) {
     print_memory_metrics(&mem_metrics);
     printf("\n");
     print_io_metrics(&io_metrics);
+}
+
+int create_cgroup(const char* cgroup_name) {
+    // Basic validation for the cgroup name
+    if (cgroup_name == NULL || strlen(cgroup_name) == 0 || strchr(cgroup_name, '/') != NULL) {
+        fprintf(stderr, "Error: Invalid cgroup name. It cannot be empty or contain a '/'.\n");
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (is_cgroup_v2()) {
+        char path[2048];
+        snprintf(path, sizeof(path), "/sys/fs/cgroup/%s", cgroup_name);
+        if (mkdir(path, 0755) != 0) {
+            return -1; // errno is set by mkdir
+        }
+    } else {
+        // For v1, create the directory under each main controller
+        const char* controllers[] = {"cpu", "memory", "blkio"};
+        int num_controllers = sizeof(controllers) / sizeof(controllers[0]);
+        for (int i = 0; i < num_controllers; i++) {
+            char path[2048];
+            snprintf(path, sizeof(path), "/sys/fs/cgroup/%s/%s", controllers[i], cgroup_name);
+            // Check if controller exists before trying to create the directory
+            char controller_path[1024];
+            snprintf(controller_path, sizeof(controller_path), "/sys/fs/cgroup/%s", controllers[i]);
+            struct stat st;
+            if (stat(controller_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+                if (mkdir(path, 0755) != 0) {
+                    // If one fails, we should ideally try to clean up the ones we already created.
+                    // For now, we'll just return the error.
+                    return -1; // errno is set by mkdir
+                }
+            }
+        }
+    }
+    return 0; // Success
+}
+
+/**
+ * @brief Helper to write a string value to a file within a cgroup.
+ */
+static int write_to_cgroup_file(const char* cgroup_path, const char* file, const char* value) {
+    char file_path[2048];
+    snprintf(file_path, sizeof(file_path), "%s/%s", cgroup_path, file);
+
+    FILE* fp = fopen(file_path, "w");
+    if (!fp) {
+        return -1; // errno is set by fopen
+    }
+
+    if (fprintf(fp, "%s", value) < 0) {
+        fclose(fp);
+        return -1; // errno is set by fprintf
+    }
+
+    fclose(fp);
+    return 0;
+}
+
+int move_process_to_cgroup(pid_t pid, const char* cgroup_name) {
+    char full_path[1024];
+    if (cgroup_name[0] != '/') {
+        snprintf(full_path, sizeof(full_path), "/sys/fs/cgroup/%s", cgroup_name);
+    } else {
+        strncpy(full_path, cgroup_name, sizeof(full_path) - 1);
+        full_path[sizeof(full_path) - 1] = '\0';
+    }
+
+    char pid_str[32];
+    snprintf(pid_str, sizeof(pid_str), "%d", pid);
+
+    if (is_cgroup_v2()) {
+        return write_to_cgroup_file(full_path, "cgroup.procs", pid_str);
+    } else {
+        // For v1, write to each controller's cgroup.procs file
+        const char* controllers[] = {"/cpu/", "/memory/", "/blkio/", "/cpuacct/", "/systemd/"};
+        const char* cgroup_name_part = NULL;
+        int controller_count = sizeof(controllers) / sizeof(controllers[0]);
+
+        for (int i = 0; i < controller_count; i++) {
+            const char* found = strstr(full_path, controllers[i]);
+            if (found) {
+                cgroup_name_part = found + strlen(controllers[i]);
+                break;
+            }
+        }
+
+        if (!cgroup_name_part) {
+            cgroup_name_part = full_path;
+        }
+
+        // Write to all controllers that exist
+        int result = 0;
+        for (int i = 0; i < 3; i++) { // Only cpu, memory, blkio matter for moving process
+            char controller_path[2048];
+            char final_cgroup_path[4096];
+            snprintf(controller_path, sizeof(controller_path), "/sys/fs/cgroup/%s", controllers[i]);
+            snprintf(final_cgroup_path, sizeof(final_cgroup_path), "%s%s", controller_path, cgroup_name_part);
+
+            struct stat st;
+            if (stat(final_cgroup_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+                if (write_to_cgroup_file(final_cgroup_path, "cgroup.procs", pid_str) != 0) {
+                    result = -1; // Continue trying others, but report failure
+                }
+            }
+        }
+        return result;
+    }
+}
+
+int apply_cpu_limit(const char* cgroup_name, int percentage) {
+    char full_path[1024];
+    if (cgroup_name[0] != '/') {
+        snprintf(full_path, sizeof(full_path), "/sys/fs/cgroup/%s", cgroup_name);
+    } else {
+        strncpy(full_path, cgroup_name, sizeof(full_path) - 1);
+        full_path[sizeof(full_path) - 1] = '\0';
+    }
+
+    if (is_cgroup_v2()) {
+        long long quota = 100000 * percentage / 100;
+        char limit_str[64];
+        snprintf(limit_str, sizeof(limit_str), "%lld 100000", quota);
+        return write_to_cgroup_file(full_path, "cpu.max", limit_str);
+    } else {
+        long long quota = 100000 * percentage / 100;
+        char quota_str[32];
+        snprintf(quota_str, sizeof(quota_str), "%lld", quota);
+        
+        char period_str[32];
+        snprintf(period_str, sizeof(period_str), "100000");
+
+        char cpu_path[2048];
+        snprintf(cpu_path, sizeof(cpu_path), "/sys/fs/cgroup/cpu/%s", cgroup_name);
+
+        if (write_to_cgroup_file(cpu_path, "cpu.cfs_period_us", period_str) != 0) {
+            return -1;
+        }
+        return write_to_cgroup_file(cpu_path, "cpu.cfs_quota_us", quota_str);
+    }
+}
+
+int apply_memory_limit(const char* cgroup_name, long long bytes) {
+    char full_path[1024];
+    if (cgroup_name[0] != '/') {
+        snprintf(full_path, sizeof(full_path), "/sys/fs/cgroup/%s", cgroup_name);
+    } else {
+        strncpy(full_path, cgroup_name, sizeof(full_path) - 1);
+        full_path[sizeof(full_path) - 1] = '\0';
+    }
+
+    char limit_str[32];
+    snprintf(limit_str, sizeof(limit_str), "%lld", bytes);
+
+    if (is_cgroup_v2()) {
+        return write_to_cgroup_file(full_path, "memory.max", limit_str);
+    } else {
+        char mem_path[2048];
+        snprintf(mem_path, sizeof(mem_path), "/sys/fs/cgroup/memory/%s", cgroup_name);
+        return write_to_cgroup_file(mem_path, "memory.limit_in_bytes", limit_str);
+    }
 }
