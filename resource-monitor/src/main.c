@@ -11,6 +11,7 @@
 #include "monitor.h"
 #include "namespace.h"
 #include "cgroup.h"
+#include "cgroup_lister.h"
 
 // --- Funções Utilitárias de UI ---
 
@@ -410,13 +411,18 @@ void handle_cgroup_menu() {
         flush_stdin_line();
 
         if (choice == 1) {
+            // First, list all available cgroups to the user
+            list_all_cgroups();
+            
+            // Now, ask the user to input the path
             char cgroup_path[512];
-            printf("Digite o caminho do cgroup (ex: /sys/fs/cgroup/memory/my-group): ");
+            printf("\nDigite o caminho do cgroup que deseja monitorar (copie da lista acima): ");
             if (fgets(cgroup_path, sizeof(cgroup_path), stdin) != NULL) {
                 cgroup_path[strcspn(cgroup_path, "\n")] = 0; // Remove newline
-                // display_cgroup_metrics(cgroup_path);
-                printf("\n[AVISO] Funcionalidade ainda não implementada.\n");
-                wait_for_enter();
+                if (strlen(cgroup_path) > 0) {
+                    display_cgroup_metrics(cgroup_path);
+                    wait_for_enter();
+                }
             }
         } else if (choice != 2) {
             printf("Opção inválida.\n");
