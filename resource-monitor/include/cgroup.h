@@ -13,6 +13,10 @@ typedef struct {
     uint64_t nr_periods;     // Number of enforcement intervals that have occurred
     uint64_t nr_throttled;   // Number of times the cgroup has been throttled
     uint64_t throttled_ns;   // Total time the cgroup has been throttled (in nanoseconds)
+
+    // Limits
+    int64_t cpu_quota_us;
+    int64_t cpu_period_us;
 } CgroupCpuMetrics;
 
 // Struct to hold Memory metrics from a cgroup
@@ -28,6 +32,9 @@ typedef struct {
     uint64_t sock;           // Amount of memory used by TCP/IP sockets
     uint64_t pgfault;        // Total number of page faults
     uint64_t pgmajfault;     // Number of major page faults
+
+    // Limit
+    int64_t memory_limit_bytes;
 } CgroupMemoryMetrics;
 
 // Struct to hold Block I/O metrics from a cgroup
@@ -83,6 +90,17 @@ int apply_cpu_limit(const char* cgroup_name, int percentage);
  * @return 0 on success, -1 on failure.
  */
 int apply_memory_limit(const char* cgroup_name, long long bytes, long long swap_bytes);
+
+/**
+ * @brief Applies an I/O limit to a cgroup.
+ *
+ * @param cgroup_name The name/path of the target cgroup.
+ * @param device The device to apply the limit to (e.g., "8:0").
+ * @param read_bps The read limit in bytes per second.
+ * @param write_bps The write limit in bytes per second.
+ * @return 0 on success, -1 on failure.
+ */
+int apply_io_limit(const char* cgroup_name, const char* device, long long read_bps, long long write_bps);
 
 
 #endif //CGROUP_H

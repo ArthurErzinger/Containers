@@ -183,3 +183,62 @@ void compare_process_namespaces(pid_t pid1, pid_t pid2) {
 
     printf("└──────────┴──────────────┴──────────────┴────────────────┘\n");
 }
+
+#define MAX_NS_TYPES 7
+#define MAX_UNIQUE_INODES 4096 // A reasonable limit for unique inodes
+
+typedef struct {
+    ino_t inodes[MAX_UNIQUE_INODES];
+    int count;
+} UniqueInodes;
+
+static void add_unique_inode(UniqueInodes *unique_inodes, ino_t inode) {
+    for (int i = 0; i < unique_inodes->count; i++) {
+        if (unique_inodes->inodes[i] == inode) {
+            return; // Already exists
+        }
+    }
+    if (unique_inodes->count < MAX_UNIQUE_INODES) {
+        unique_inodes->inodes[unique_inodes->count++] = inode;
+    }
+}
+
+void generate_system_namespace_report(void) {
+    const char *ns_types[MAX_NS_TYPES] = {"mnt", "uts", "ipc", "pid", "net", "user", "cgroup"};
+    UniqueInodes unique_ns[MAX_NS_TYPES] = {0};
+
+    DIR *proc_dir = opendir("/proc");
+    if (proc_dir == NULL) {
+        perror("Erro ao abrir /proc");
+        return;
+    }
+
+    printf("\nGerando relatório de namespaces do sistema...\n");
+
+    struct dirent *entry;
+    while ((entry = readdir(proc_dir)) != NULL) {
+        if (entry->d_type == DT_DIR && isdigit(entry->d_name[0])) {
+            char ns_path[512];
+            snprintf(ns_path, sizeof(ns_path), "/proc/%s/ns", entry->d_name);
+
+            for (int i = 0; i < MAX_NS_TYPES; i++) {
+                char ns_file_path[1024];
+                snprintf(ns_file_path, sizeof(ns_file_path), "%s/%s", ns_path, ns_types[i]);
+
+                struct stat sb;
+                if (stat(ns_file_path, &sb) == 0) {
+                    add_unique_inode(&unique_ns[i], sb.st_ino);
+                }
+            }
+        }
+    }
+    closedir(proc_dir);
+
+    printf("┌──────────┬──────────────────────────┐\n");
+    printf("│ TIPO     │ Namespaces Únicos Ativos │\n");
+    printf("├──────────┼──────────────────────────┤\n");
+    for (int i = 0; i < MAX_NS_TYPES; i++) {
+        printf("│ %-8s │ %-24d │\n", ns_types[i], unique_ns[i].count);
+    }
+    printf("└──────────┴──────────────────────────┘\n");
+}

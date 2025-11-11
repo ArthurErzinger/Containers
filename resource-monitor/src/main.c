@@ -14,6 +14,8 @@
 #include "cgroup.h"
 #include "cgroup_lister.h"
 
+
+
 // --- Funções Utilitárias de UI ---
 
 static void flush_stdin_line(void) {
@@ -195,12 +197,17 @@ static void run_continuous_monitoring(pid_t pid, int interval, FILE *csv_output)
         }
 
         // --- Cálculos ---
+        long num_cpu_cores = sysconf(_SC_NPROCESSORS_ONLN);
+        if (num_cpu_cores < 1) {
+            num_cpu_cores = 1; // Fallback in case sysconf fails
+        }
+
         unsigned long process_ticks_delta = (cpu2.utime + cpu2.stime) - (cpu1.utime + cpu1.stime);
         unsigned long total_cpu_delta = global_cpu2 - global_cpu1;
 
         double cpu_percentage = 0.0;
         if (total_cpu_delta > 0) {
-            cpu_percentage = 100.0 * (double)process_ticks_delta / (double)total_cpu_delta;
+            cpu_percentage = 100.0 * (double)process_ticks_delta / (double)total_cpu_delta * num_cpu_cores;
         }
 
         double read_rate_bps = (double)(io2.read_bytes - io1.read_bytes) / interval;
@@ -281,7 +288,8 @@ void print_namespace_submenu() {
     printf("    ├─ [1] Listar namespaces de um processo\n");
     printf("    ├─ [2] Encontrar processos em um namespace\n");
     printf("    ├─ [3] Comparar namespaces entre dois processos\n");
-    printf("    └─ [4] Voltar ao menu principal\n\n");
+    printf("    ├─ [4] Gerar relatório de namespaces do sistema\n");
+    printf("    └─ [5] Voltar ao menu principal\n\n");
 }
 
 void print_cgroup_submenu() {
@@ -289,8 +297,9 @@ void print_cgroup_submenu() {
     printf("    ├─ [1] Listar métricas de um cgroup\n");
     printf("    ├─ [2] Criar novo cgroup\n");
     printf("    ├─ [3] Mover processo para um cgroup\n");
-    printf("    ├─ [4] Aplicar limites a um cgroup\n");
-    printf("    └─ [5] Voltar ao menu principal\n\n");
+    printf("    ├─ [4] Aplicar limites de CPU/Memória a um cgroup\n");
+    printf("    ├─ [5] Aplicar limites de I/O a um cgroup\n");
+    printf("    └─ [6] Voltar ao menu principal\n\n");
 }
 
 // --- Handlers de Lógica dos Menus ---
@@ -354,7 +363,7 @@ void handle_profiler_menu() {
 
 void handle_namespace_menu() {
     int choice = 0;
-    while (choice != 4) {
+    while (choice != 5) {
         print_namespace_submenu();
         printf("Opção do Namespace Analyzer: ");
         if (scanf("%d", &choice) != 1) {
@@ -391,7 +400,12 @@ void handle_namespace_menu() {
                 }
                 break;
             }
-            case 4:
+            case 4: {
+                generate_system_namespace_report();
+                wait_for_enter();
+                break;
+            }
+            case 5:
                 // Voltar ao menu principal
                 break;
             default:
@@ -406,7 +420,7 @@ void handle_namespace_menu() {
 
 void handle_cgroup_menu() {
     int choice = 0;
-    while (choice != 5) {
+    while (choice != 6) {
         print_cgroup_submenu();
         printf("Opção do CGroup Manager: ");
         if (scanf("%d", &choice) != 1) {
@@ -425,6 +439,7 @@ void handle_cgroup_menu() {
                 if (fgets(cgroup_path, sizeof(cgroup_path), stdin) != NULL) {
                     cgroup_path[strcspn(cgroup_path, "\n")] = 0; // Remove newline
                     if (strlen(cgroup_path) > 0) {
+                        printf("[DEBUG] Path passed to display_cgroup_metrics: '%s'\n", cgroup_path);
                         display_cgroup_metrics(cgroup_path);
                         wait_for_enter();
                     }
@@ -550,7 +565,51 @@ void handle_cgroup_menu() {
                 }
                 break;
             }
-            case 5: // Voltar
+            case 5: { // Aplicar limites de I/O
+                list_all_cgroups();
+                char cgroup_name[256];
+                printf("\nDigite o nome ou caminho do cgroup ao qual aplicar o limite de I/O: ");
+                if (fgets(cgroup_name, sizeof(cgroup_name), stdin) != NULL) {
+                    cgroup_name[strcspn(cgroup_name, "\n")] = 0;
+                    if (strlen(cgroup_name) > 0) {
+                        char device[64];
+                        long long read_bps = 0;
+                        long long write_bps = 0;
+
+                        printf("Digite o dispositivo (ex: 8:0 para /dev/sda): ");
+                        if (fgets(device, sizeof(device), stdin) != NULL) {
+                            device[strcspn(device, "\n")] = 0;
+                            printf("Digite o limite de leitura em bytes por segundo (BPS): ");
+                            if (scanf("%lld", &read_bps) == 1) {
+                                flush_stdin_line();
+                                printf("Digite o limite de escrita em bytes por segundo (BPS): ");
+                                if (scanf("%lld", &write_bps) == 1) {
+                                    flush_stdin_line();
+                                    if (apply_io_limit(cgroup_name, device, read_bps, write_bps) != 0) {
+                                        if (errno == EACCES || errno == EPERM) {
+                                            fprintf(stderr, "\nErro: Falha ao aplicar limite de I/O. Permissão negada.\n");
+                                            fprintf(stderr, "Esta operação requer privilégios de administrador. Tente executar o programa com 'sudo'.\n");
+                                        } else {
+                                            perror("\nFalha ao aplicar limite de I/O");
+                                        }
+                                    } else {
+                                        printf("\nLimite de I/O aplicado com sucesso!\n");
+                                    }
+                                } else {
+                                    flush_stdin_line();
+                                    printf("Entrada inválida para limite de escrita.\n");
+                                }
+                            } else {
+                                flush_stdin_line();
+                                printf("Entrada inválida para limite de leitura.\n");
+                            }
+                        }
+                        wait_for_enter();
+                    }
+                }
+                break;
+            }
+            case 6: // Voltar
                 break;
             default:
                 printf("Opção inválida.\n");

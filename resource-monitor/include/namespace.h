@@ -34,6 +34,14 @@ void find_processes_in_namespace(void);
  */
 void compare_process_namespaces(pid_t pid1, pid_t pid2);
 
+/**
+ * @brief Gera um relatório de todos os namespaces ativos no sistema.
+ * 
+ * Varre o sistema de arquivos /proc para encontrar todos os namespaces
+ * únicos de cada tipo e imprime um resumo.
+ */
+void generate_system_namespace_report(void);
+
 
 
 #endif //NAMESPACE_H
