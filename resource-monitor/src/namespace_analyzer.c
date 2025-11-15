@@ -9,6 +9,39 @@
 
 #include "namespace.h"
 
+// Helper function to initialize NamespaceInfo
+static void init_namespace_info(NamespaceInfo *ns_info, const char *type, ino_t inode) {
+    strncpy(ns_info->type, type, sizeof(ns_info->type) - 1);
+    ns_info->type[sizeof(ns_info->type) - 1] = '\0';
+    ns_info->inode = inode;
+    snprintf(ns_info->path, sizeof(ns_info->path), "%s:[%lu]", type, (unsigned long)inode);
+    ns_info->pids = NULL;
+    ns_info->pid_count = 0;
+    ns_info->pid_capacity = 0;
+}
+
+// Helper function to add a PID to NamespaceInfo
+static void add_pid_to_namespace_info(NamespaceInfo *ns_info, pid_t pid) {
+    if (ns_info->pid_count == ns_info->pid_capacity) {
+        ns_info->pid_capacity = (ns_info->pid_capacity == 0) ? 4 : ns_info->pid_capacity * 2;
+        pid_t *new_pids = realloc(ns_info->pids, ns_info->pid_capacity * sizeof(pid_t));
+        if (new_pids == NULL) {
+            perror("Failed to reallocate pids");
+            exit(EXIT_FAILURE);
+        }
+        ns_info->pids = new_pids;
+    }
+    ns_info->pids[ns_info->pid_count++] = pid;
+}
+
+// Helper function to free NamespaceInfo resources
+static void free_namespace_info(NamespaceInfo *ns_info) {
+    free(ns_info->pids);
+    ns_info->pids = NULL;
+    ns_info->pid_count = 0;
+    ns_info->pid_capacity = 0;
+}
+
 void list_process_namespaces(pid_t pid) {
     char ns_path[256];
     snprintf(ns_path, sizeof(ns_path), "/proc/%d/ns", pid);
@@ -184,61 +217,126 @@ void compare_process_namespaces(pid_t pid1, pid_t pid2) {
     printf("└──────────┴──────────────┴──────────────┴────────────────┘\n");
 }
 
-#define MAX_NS_TYPES 7
-#define MAX_UNIQUE_INODES 4096 // A reasonable limit for unique inodes
-
-typedef struct {
-    ino_t inodes[MAX_UNIQUE_INODES];
-    int count;
-} UniqueInodes;
-
-static void add_unique_inode(UniqueInodes *unique_inodes, ino_t inode) {
-    for (int i = 0; i < unique_inodes->count; i++) {
-        if (unique_inodes->inodes[i] == inode) {
-            return; // Already exists
-        }
+void generate_json_namespace_report(void) {
+    const char *filename = "report.json";
+    FILE *file = fopen(filename, "w");
+    if (file == NULL) {
+        perror("Erro ao criar o arquivo de relatório");
+        return;
     }
-    if (unique_inodes->count < MAX_UNIQUE_INODES) {
-        unique_inodes->inodes[unique_inodes->count++] = inode;
-    }
-}
 
-void generate_system_namespace_report(void) {
-    const char *ns_types[MAX_NS_TYPES] = {"mnt", "uts", "ipc", "pid", "net", "user", "cgroup"};
-    UniqueInodes unique_ns[MAX_NS_TYPES] = {0};
+    const char *ns_types[] = {"mnt", "uts", "ipc", "pid", "net", "user", "cgroup", NULL};
+    NamespaceInfo *unique_namespaces = NULL;
+    int unique_ns_count = 0;
+    int unique_ns_capacity = 0;
 
     DIR *proc_dir = opendir("/proc");
     if (proc_dir == NULL) {
         perror("Erro ao abrir /proc");
+        fclose(file);
         return;
     }
 
-    printf("\nGerando relatório de namespaces do sistema...\n");
-
     struct dirent *entry;
     while ((entry = readdir(proc_dir)) != NULL) {
-        if (entry->d_type == DT_DIR && isdigit(entry->d_name[0])) {
-            char ns_path[512];
-            snprintf(ns_path, sizeof(ns_path), "/proc/%s/ns", entry->d_name);
+        if (entry->d_type == DT_DIR && is_pid_dir(entry->d_name)) {
+            pid_t current_pid = atoi(entry->d_name);
+            char ns_path_dir[512];
+            snprintf(ns_path_dir, sizeof(ns_path_dir), "/proc/%d/ns", current_pid);
 
-            for (int i = 0; i < MAX_NS_TYPES; i++) {
+            for (int i = 0; ns_types[i] != NULL; i++) {
                 char ns_file_path[1024];
-                snprintf(ns_file_path, sizeof(ns_file_path), "%s/%s", ns_path, ns_types[i]);
+                snprintf(ns_file_path, sizeof(ns_file_path), "%s/%s", ns_path_dir, ns_types[i]);
 
                 struct stat sb;
                 if (stat(ns_file_path, &sb) == 0) {
-                    add_unique_inode(&unique_ns[i], sb.st_ino);
+                    int found = 0;
+                    for (int j = 0; j < unique_ns_count; j++) {
+                        if (strcmp(unique_namespaces[j].type, ns_types[i]) == 0 && unique_namespaces[j].inode == sb.st_ino) {
+                            add_pid_to_namespace_info(&unique_namespaces[j], current_pid);
+                            found = 1;
+                            break;
+                        }
+                    }
+
+                    if (!found) {
+                        if (unique_ns_count == unique_ns_capacity) {
+                            unique_ns_capacity = (unique_ns_capacity == 0) ? 10 : unique_ns_capacity * 2;
+                            NamespaceInfo *new_namespaces = realloc(unique_namespaces, unique_ns_capacity * sizeof(NamespaceInfo));
+                            if (new_namespaces == NULL) {
+                                perror("Failed to reallocate unique_namespaces");
+                                closedir(proc_dir);
+                                fclose(file);
+                                for (int j = 0; j < unique_ns_count; j++) {
+                                    free_namespace_info(&unique_namespaces[j]);
+                                }
+                                free(unique_namespaces);
+                                return;
+                            }
+                            unique_namespaces = new_namespaces;
+                        }
+                        init_namespace_info(&unique_namespaces[unique_ns_count], ns_types[i], sb.st_ino);
+                        add_pid_to_namespace_info(&unique_namespaces[unique_ns_count], current_pid);
+                        unique_ns_count++;
+                    }
                 }
             }
         }
     }
     closedir(proc_dir);
 
-    printf("┌──────────┬──────────────────────────┐\n");
-    printf("│ TIPO     │ Namespaces Únicos Ativos │\n");
-    printf("├──────────┼──────────────────────────┤\n");
-    for (int i = 0; i < MAX_NS_TYPES; i++) {
-        printf("│ %-8s │ %-24d │\n", ns_types[i], unique_ns[i].count);
+    // Manually generate JSON into the file
+    fprintf(file, "[\n");
+    for (int i = 0; i < unique_ns_count; i++) {
+        fprintf(file, "  {\n");
+        fprintf(file, "    \"type\": \"%s\",\n", unique_namespaces[i].type);
+        fprintf(file, "    \"inode\": %lu,\n", (unsigned long)unique_namespaces[i].inode);
+        fprintf(file, "    \"path\": \"%s\",\n", unique_namespaces[i].path);
+        fprintf(file, "    \"pids\": [");
+        for (int j = 0; j < unique_namespaces[i].pid_count; j++) {
+            fprintf(file, "%d", unique_namespaces[i].pids[j]);
+            if (j < unique_namespaces[i].pid_count - 1) {
+                fprintf(file, ", ");
+            }
+        }
+        fprintf(file, "]\n");
+        fprintf(file, "  }");
+        if (i < unique_ns_count - 1) {
+            fprintf(file, ",\n");
+        } else {
+            fprintf(file, "\n");
+        }
     }
-    printf("└──────────┴──────────────────────────┘\n");
+    fprintf(file, "]\n");
+    fclose(file);
+
+    // Free all allocated NamespaceInfo resources
+    for (int i = 0; i < unique_ns_count; i++) {
+        free_namespace_info(&unique_namespaces[i]);
+    }
+    free(unique_namespaces);
+
+    printf("Relatório 'report.json' gerado com sucesso.\n");
+
+    // Ask user if they want to see the report
+    printf("Deseja exibir o conteúdo do relatório gerado? (s/n): ");
+    int user_choice = getchar();
+    // Consume the rest of the line, especially the newline character
+    while (getchar() != '\n' && getchar() != EOF);
+
+    if (user_choice == 's' || user_choice == 'S') {
+        FILE *read_file_ptr = fopen(filename, "r");
+        if (read_file_ptr == NULL) {
+            perror("Erro ao abrir o arquivo de relatório para leitura");
+            return;
+        }
+
+        printf("\n--- Conteúdo de %s ---\n", filename);
+        char buffer[1024];
+        while (fgets(buffer, sizeof(buffer), read_file_ptr) != NULL) {
+            printf("%s", buffer);
+        }
+        printf("\n--- Fim do Relatório ---\n");
+        fclose(read_file_ptr);
+    }
 }

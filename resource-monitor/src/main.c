@@ -534,7 +534,7 @@ void handle_namespace_menu() {
 
             case 4: {
 
-                generate_system_namespace_report();
+                generate_json_namespace_report();
 
                 wait_for_enter();
 
@@ -900,19 +900,15 @@ void handle_cgroup_manager_menu() {
 
 
 
-            case 5:
-
-
-
-                printf("Funcionalidade [Gerar relatório] a ser implementada.\n");
-
-
-
-                wait_for_enter();
-
-
-
+            case 5: {
+                char *cgroup_path = select_cgroup();
+                if (cgroup_path != NULL) {
+                    generate_cgroup_report(cgroup_version, cgroup_path, "report.json");
+                    free(cgroup_path);
+                    wait_for_enter();
+                }
                 break;
+            }
 
 
 
@@ -962,68 +958,54 @@ void handle_cgroup_manager_menu() {
 
 
 
-int main() {
-
-    int choice = 0;
-
-    while (choice != 4) {
-
-        print_main_menu();
-
-        printf("Opção principal: ");
-
-        if (scanf("%d", &choice) != 1) {
-
-            flush_stdin_line();
-
-            choice = -1;
-
-        } else {
-
-            flush_stdin_line();
-
+int main(int argc, char *argv[]) {
+    // Check for command-line arguments for direct report generation
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-n") == 0 || strcmp(argv[i], "--namespace-report") == 0) {
+            generate_json_namespace_report();
+            return 0; // Exit after generating the report
         }
-
-
-
-        switch (choice) {
-
-            case 1:
-
-                handle_profiler_menu();
-
-                break;
-
-            case 2:
-
-                handle_namespace_menu();
-
-                break;
-
-            case 3:
-
-                handle_cgroup_manager_menu();
-
-                break;
-
-            case 4:
-
-                printf("Saindo...\n");
-
-                break;
-
-            default:
-
-                printf("Opção inválida. Tente novamente.\n");
-
-                sleep(1);
-
-                break;
-
+        if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--cgroup-report") == 0) {
+            CgroupVersion cgroup_version = get_cgroup_version();
+            if (cgroup_version != CGROUP_UNKNOWN) {
+                generate_cgroup_report(cgroup_version, "/", "report.json");
+            } else {
+                fprintf(stderr, "Erro: Não foi possível determinar a versão do cgroup.\n");
+                return 1;
+            }
+            return 0; // Exit after generating the report
         }
-
     }
 
-    return 0;
+    int choice = 0;
+    while (choice != 4) {
+        print_main_menu();
+        printf("Opção principal: ");
+        if (scanf("%d", &choice) != 1) {
+            flush_stdin_line();
+            choice = -1;
+        } else {
+            flush_stdin_line();
+        }
 
+        switch (choice) {
+            case 1:
+                handle_profiler_menu();
+                break;
+            case 2:
+                handle_namespace_menu();
+                break;
+            case 3:
+                handle_cgroup_manager_menu();
+                break;
+            case 4:
+                printf("Saindo...\n");
+                break;
+            default:
+                printf("Opção inválida. Tente novamente.\n");
+                sleep(1);
+                break;
+        }
+    }
+    return 0;
 }

@@ -35,13 +35,21 @@ void find_processes_in_namespace(void);
 void compare_process_namespaces(pid_t pid1, pid_t pid2);
 
 /**
- * @brief Gera um relatório de todos os namespaces ativos no sistema.
+ * @brief Gera um relatório de todos os namespaces ativos no sistema em formato JSON.
  * 
  * Varre o sistema de arquivos /proc para encontrar todos os namespaces
- * únicos de cada tipo e imprime um resumo.
+ * únicos de cada tipo e os processos associados a eles, formatando a saída como JSON.
  */
-void generate_system_namespace_report(void);
+void generate_json_namespace_report(void);
 
-
+// Estrutura para armazenar informações de um namespace único
+typedef struct {
+    char type[16];      // Tipo do namespace (e.g., "mnt", "uts")
+    ino_t inode;        // Inode do namespace
+    char path[64];      // Caminho do namespace (e.g., "mnt:[inode]")
+    pid_t *pids;        // Array dinâmico de PIDs associados a este namespace
+    int pid_count;      // Número de PIDs no array
+    int pid_capacity;   // Capacidade atual do array de PIDs
+} NamespaceInfo;
 
 #endif //NAMESPACE_H

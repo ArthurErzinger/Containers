@@ -778,3 +778,177 @@ int apply_resource_limits(CgroupVersion version, const char* relative_cgroup_pat
     printf("--------------------------------------------------\n");
     return 0;
 }
+
+void generate_cgroup_report(CgroupVersion version, const char* relative_path, const char* output_file) {
+    char full_path[2048];
+    char file_path[2068];
+    FILE *fp;
+    char line[512];
+
+    CgroupReport report;
+    memset(&report, 0, sizeof(CgroupReport));
+
+    if (strcmp(relative_path, "/") == 0) {
+        snprintf(full_path, sizeof(full_path), "/sys/fs/cgroup");
+        report.cgroup_id = strdup("cgroup:/");
+    } else {
+        if (relative_path[0] == '/') {
+            snprintf(full_path, sizeof(full_path), "/sys/fs/cgroup%s", relative_path);
+        } else {
+            snprintf(full_path, sizeof(full_path), "/sys/fs/cgroup/%s", relative_path);
+        }
+        char cgroup_id_buf[256];
+        snprintf(cgroup_id_buf, sizeof(cgroup_id_buf), "cgroup:%s", relative_path);
+        report.cgroup_id = strdup(cgroup_id_buf);
+    }
+
+    if (version == CGROUP_V2) {
+        // --- CPU Metrics ---
+        snprintf(file_path, sizeof(file_path), "%s/cpu.stat", full_path);
+        fp = fopen(file_path, "r");
+        if (fp != NULL) {
+            while (fgets(line, sizeof(line), fp) != NULL) {
+                if (sscanf(line, "usage_usec %llu", &report.resource_usage.cpu.usage_usec) == 1) {}
+                else if (sscanf(line, "user_usec %llu", &report.resource_usage.cpu.user_usec) == 1) {}
+                else if (sscanf(line, "system_usec %llu", &report.resource_usage.cpu.system_usec) == 1) {}
+            }
+            fclose(fp);
+        }
+
+        // --- Memory Metrics ---
+        snprintf(file_path, sizeof(file_path), "%s/memory.current", full_path);
+        fp = fopen(file_path, "r");
+        if (fp != NULL) {
+            if (fscanf(fp, "%llu", &report.resource_usage.memory.current_bytes) != 1) {
+                report.resource_usage.memory.current_bytes = 0;
+            }
+            fclose(fp);
+        }
+
+        // --- I/O Metrics ---
+        snprintf(file_path, sizeof(file_path), "%s/io.stat", full_path);
+        fp = fopen(file_path, "r");
+        if (fp != NULL) {
+            char dev[32];
+            unsigned long long rbytes = 0, wbytes = 0;
+            while (fgets(line, sizeof(line), fp) != NULL) {
+                if (sscanf(line, "%s rbytes=%llu wbytes=%llu", dev, &rbytes, &wbytes) == 3) {
+                    report.resource_usage.io.read_bytes += rbytes;
+                    report.resource_usage.io.write_bytes += wbytes;
+                }
+            }
+            fclose(fp);
+        }
+
+    } else if (version == CGROUP_V1) {
+        long ticks_per_sec = sysconf(_SC_CLK_TCK);
+
+        // --- CPU Metrics (v1) ---
+        snprintf(file_path, sizeof(file_path), "/sys/fs/cgroup/cpuacct%s/cpuacct.stat", relative_path);
+        fp = fopen(file_path, "r");
+        if (fp != NULL) {
+            unsigned long long user_jiffies = 0, system_jiffies = 0;
+            while (fgets(line, sizeof(line), fp) != NULL) {
+                if (sscanf(line, "user %llu", &user_jiffies) == 1) {}
+                else if (sscanf(line, "system %llu", &system_jiffies) == 1) {}
+            }
+            fclose(fp);
+            report.resource_usage.cpu.user_usec = (user_jiffies * 1000000) / ticks_per_sec;
+            report.resource_usage.cpu.system_usec = (system_jiffies * 1000000) / ticks_per_sec;
+            report.resource_usage.cpu.usage_usec = report.resource_usage.cpu.user_usec + report.resource_usage.cpu.system_usec;
+        }
+
+        // --- Memory Metrics (v1) ---
+        snprintf(file_path, sizeof(file_path), "/sys/fs/cgroup/memory%s/memory.usage_in_bytes", relative_path);
+        fp = fopen(file_path, "r");
+        if (fp != NULL) {
+            if (fscanf(fp, "%llu", &report.resource_usage.memory.current_bytes) != 1) {
+                report.resource_usage.memory.current_bytes = 0;
+            }
+            fclose(fp);
+        }
+
+        // --- I/O Metrics (v1) ---
+        snprintf(file_path, sizeof(file_path), "/sys/fs/cgroup/blkio%s/blkio.throttle.io_service_bytes", relative_path);
+        fp = fopen(file_path, "r");
+        if (fp != NULL) {
+            char dev[32], type[16];
+            unsigned long long bytes = 0;
+            while (fscanf(fp, "%s %s %llu", dev, type, &bytes) == 3) {
+                if (strcmp(type, "Read") == 0) {
+                    report.resource_usage.io.read_bytes += bytes;
+                } else if (strcmp(type, "Write") == 0) {
+                    report.resource_usage.io.write_bytes += bytes;
+                }
+            }
+            fclose(fp);
+        }
+    }
+
+    // --- PIDs ---
+    const char* pid_file = (version == CGROUP_V2) ? "cgroup.procs" : "tasks";
+    if (version == CGROUP_V1) {
+         snprintf(file_path, sizeof(file_path), "/sys/fs/cgroup/cpu%s/%s", relative_path, pid_file);
+    } else {
+         snprintf(file_path, sizeof(file_path), "%s/%s", full_path, pid_file);
+    }
+
+    fp = fopen(file_path, "r");
+    if (fp != NULL) {
+        pid_t pid;
+        int capacity = 10;
+        report.pids = malloc(capacity * sizeof(pid_t));
+        report.pid_count = 0;
+        while (fscanf(fp, "%d", &pid) == 1) {
+            if (report.pid_count >= capacity) {
+                capacity *= 2;
+                report.pids = realloc(report.pids, capacity * sizeof(pid_t));
+            }
+            report.pids[report.pid_count++] = pid;
+        }
+        fclose(fp);
+    }
+
+    // --- Generate JSON Report ---
+    fp = fopen(output_file, "w");
+    if (fp == NULL) {
+        perror("Erro ao abrir arquivo de relatório para escrita");
+        free(report.cgroup_id);
+        free(report.pids);
+        return;
+    }
+
+    fprintf(fp, "[\n");
+    fprintf(fp, "  {\n");
+    fprintf(fp, "    \"cgroup_id\": \"%s\",\n", report.cgroup_id);
+    fprintf(fp, "    \"pids\": [");
+    for (int i = 0; i < report.pid_count; i++) {
+        fprintf(fp, "%d%s", report.pids[i], (i == report.pid_count - 1) ? "" : ", ");
+    }
+    fprintf(fp, "],\n");
+    fprintf(fp, "    \"resource_usage\": {\n");
+    fprintf(fp, "      \"cpu\": {\n");
+    fprintf(fp, "        \"usage_usec\": %llu,\n", report.resource_usage.cpu.usage_usec);
+    fprintf(fp, "        \"user_usec\": %llu,\n", report.resource_usage.cpu.user_usec);
+    fprintf(fp, "        \"system_usec\": %llu\n", report.resource_usage.cpu.system_usec);
+    fprintf(fp, "      },\n");
+    fprintf(fp, "      \"memory\": {\n");
+    fprintf(fp, "        \"current_bytes\": %llu,\n", report.resource_usage.memory.current_bytes);
+    fprintf(fp, "        \"max_bytes\": %llu,\n", report.resource_usage.memory.max_bytes);
+    fprintf(fp, "        \"swap_bytes\": %llu\n", report.resource_usage.memory.swap_bytes);
+    fprintf(fp, "      },\n");
+    fprintf(fp, "      \"io\": {\n");
+    fprintf(fp, "        \"read_bytes\": %llu,\n", report.resource_usage.io.read_bytes);
+    fprintf(fp, "        \"write_bytes\": %llu\n", report.resource_usage.io.write_bytes);
+    fprintf(fp, "      }\n");
+    fprintf(fp, "    }\n");
+    fprintf(fp, "  }\n");
+    fprintf(fp, "]\n");
+
+    fclose(fp);
+    printf("Relatório do cgroup gerado com sucesso em '%s'.\n", output_file);
+
+    // Free allocated memory
+    free(report.cgroup_id);
+    free(report.pids);
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "cgroup_id": "cgroup:init.scope",
+    "pids": [1],
+    "resource_usage": {
+      "cpu": {
+        "usage_usec": 6131424,
+        "user_usec": 2813401,
+        "system_usec": 3318022
+      },
+      "memory": {
+        "current_bytes": 15716352,
+        "max_bytes": 0,
+        "swap_bytes": 0
+      },
+      "io": {
+        "read_bytes": 1716224,
+        "write_bytes": 0
+      }
+    }
+  }
+]
