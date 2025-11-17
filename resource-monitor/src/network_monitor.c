@@ -41,9 +41,12 @@ int get_network_metrics(pid_t pid, NetworkMetrics *metrics) {
     char iface_name[32];
 
     while (fgets(line, sizeof(line), file) != NULL) {
-        // Formato: interface: rx_bytes rx_packets ... tx_bytes tx_packets ...
-        sscanf(line, " %31[^:]:%*s %llu %llu %*s %*s %*s %*s %*s %*s %llu %llu",
-               iface_name, &rx_bytes, &rx_packets, &tx_bytes, &tx_packets);
+        // Formato: interface: rx_bytes rx_packets rx_errs rx_drop rx_fifo rx_frame rx_compressed rx_multicast tx_bytes tx_packets ...
+        // Precisamos pular 6 campos após rx_packets antes de chegar em tx_bytes
+        if (sscanf(line, " %31[^:]:%llu %llu %*u %*u %*u %*u %*u %*u %llu %llu",
+                   iface_name, &rx_bytes, &rx_packets, &tx_bytes, &tx_packets) != 5) {
+            continue; // Pula linhas com formato inválido
+        }
 
         // Ignora a interface de loopback
         if (strcmp(iface_name, "lo") != 0) {

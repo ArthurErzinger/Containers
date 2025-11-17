@@ -13,6 +13,15 @@
 #include "namespace.h"
 #include "cgroup.h"
 
+// Constantes para configuração padrão
+#define DEFAULT_MONITORING_INTERVAL 3
+#define DEFAULT_BATCH_INTERVAL 1
+#define DEFAULT_BATCH_SAMPLES 10
+#define MAX_FILENAME_LENGTH 256
+#define MAX_PATH_LENGTH 512
+#define MAX_BUFFER_LENGTH 256
+#define MAX_INTERVAL_INPUT_LENGTH 10
+
 static void print_usage(const char *program_name) {
     printf("Uso: %s [opções]\n", program_name);
     printf("Opções disponíveis:\n");
@@ -29,6 +38,7 @@ static void print_usage(const char *program_name) {
 
 // --- Funções Utilitárias de UI ---
 
+// Limpa o buffer de entrada até encontrar newline ou EOF
 static void flush_stdin_line(void) {
     int c;
     while ((c = getchar()) != '\n' && c != EOF);
@@ -39,8 +49,8 @@ static void flush_stdin_line(void) {
 static int select_process() {
     DIR *dir;
     struct dirent *entry;
-    char path[512];
-    char comm[256];
+    char path[MAX_PATH_LENGTH];
+    char comm[MAX_BUFFER_LENGTH];
     FILE *fp;
 
     printf("===== Lista de Processos em Execução =====\n");
@@ -103,8 +113,6 @@ static int select_process() {
     return selected_pid;
 }
 
-
-// --- Funções Utilitárias de UI ---
 
 static void wait_for_enter(void) {
     printf("\nPressione Enter para continuar...");
@@ -363,71 +371,56 @@ static int run_batch_monitoring(pid_t pid, int interval, int samples, const char
 // --- Funções de Menu ---
 
 void print_main_menu() {
-
     printf("\n===========================\n");
-
     printf(" RESOURCE MONITOR SYSTEM\n");
-
     printf("===========================\n\n");
-
     printf("[1] Resource Profiler\n");
-
     printf("[2] Namespace Analyzer\n");
-
     printf("[3] Control Group Manager\n");
-
-    printf("[4] Sair\n\n");
-
+    printf("[4] Executar Experimentos\n");
+    printf("[5] Sair\n\n");
 }
 
 
 
 void print_profiler_submenu() {
-
     printf("\n  --- [1] Resource Profiler ---\n");
-
     printf("    ├─ [1] Monitorar Processo (Uso de CPU, I/O, etc.)\n");
-
     printf("    └─ [2] Voltar ao menu principal\n\n");
-
 }
 
 
 
 void print_namespace_submenu() {
-
     printf("\n  --- [2] Namespace Analyzer ---\n");
-
     printf("    ├─ [1] Listar namespaces de um processo\n");
-
     printf("    ├─ [2] Encontrar processos em um namespace\n");
-
     printf("    ├─ [3] Comparar namespaces entre dois processos\n");
-
     printf("    ├─ [4] Gerar relatório de namespaces do sistema\n");
-
     printf("    └─ [5] Voltar ao menu principal\n\n");
-
 }
 
 
 
 void print_cgroup_submenu() {
-
     printf("\n  --- [3] Control Group Manager ---\n");
-
     printf("    ├─ [1] Listar métricas de cgroups (CPU, Memory, BlkIO)\n");
-
     printf("    ├─ [2] Criar cgroup experimental\n");
-
     printf("    ├─ [3] Mover processo para cgroup\n");
-
     printf("    ├─ [4] Aplicar limites de CPU, Memória e I/O\n");
-
     printf("    ├─ [5] Gerar relatório de utilização\n");
-
     printf("    └─ [6] Voltar ao menu principal\n\n");
+}
 
+void print_experiments_submenu() {
+    printf("\n  --- [4] Executar Experimentos ---\n");
+    printf("    ├─ [1] Executar TODOS os experimentos\n");
+    printf("    ├─ [2] Experimento 1: Overhead de Monitoramento\n");
+    printf("    ├─ [3] Experimento 2: Isolamento via Namespaces\n");
+    printf("    ├─ [4] Experimento 3: Throttling de CPU (sudo)\n");
+    printf("    ├─ [5] Experimento 4: Limitação de Memória (sudo)\n");
+    printf("    ├─ [6] Experimento 5: Limitação de I/O (sudo)\n");
+    printf("    └─ [7] Voltar ao menu principal\n\n");
 }
 
 
@@ -437,231 +430,196 @@ void print_cgroup_submenu() {
 
 
 void handle_profiler_menu() {
-
     int choice = 0;
-
     while (choice != 2) {
-
         print_profiler_submenu();
-
         printf("Opção do Profiler: ");
-
         if (scanf("%d", &choice) != 1) {
-
             flush_stdin_line();
-
             choice = 0;
-
             continue;
-
         }
-
         flush_stdin_line();
 
-
-
         if (choice == 1) {
-
             int selected_pid = select_process();
-
             if (selected_pid != -1) {
-
-                int interval = 3;
-
-                printf("Digite o intervalo de monitoramento em segundos (padrão: 3): ");
-
-                char interval_str[10];
-
+                int interval = DEFAULT_MONITORING_INTERVAL;
+                printf("Digite o intervalo de monitoramento em segundos (padrão: %d): ", DEFAULT_MONITORING_INTERVAL);
+                char interval_str[MAX_INTERVAL_INPUT_LENGTH];
                 if (fgets(interval_str, sizeof(interval_str), stdin) != NULL) {
-
                     int user_interval = atoi(interval_str);
-
                     if (user_interval > 0) {
-
                         interval = user_interval;
-
                     }
-
                 }
-
-
 
                 char export_choice;
-
-                char filename[256] = {0};
-
+                char filename[MAX_FILENAME_LENGTH] = {0};
                 FILE *csv_file = NULL;
 
-
-
                 printf("Deseja exportar os dados para um arquivo CSV? (s/n): ");
-
                 if (scanf(" %c", &export_choice) == 1) {
-
                     flush_stdin_line();
-
                     if (export_choice == 's' || export_choice == 'S') {
-
                         printf("Digite o nome do arquivo CSV (ex: metricas.csv): ");
-
                         if (fgets(filename, sizeof(filename), stdin) != NULL) {
-
                             filename[strcspn(filename, "\n")] = 0; // Remove newline
-
                             if(strlen(filename) > 0) {
-
                                 csv_file = fopen(filename, "w");
-
                                 if (csv_file == NULL) {
-
                                     perror("Erro ao abrir o arquivo CSV para escrita");
-
                                 }
-
                             }
-
                         }
-
                     }
-
                 } else {
-
                     flush_stdin_line();
-
                 }
-
-
 
                 run_continuous_monitoring(selected_pid, interval, csv_file);
-                if (csv_file != NULL) {
-                    fclose(csv_file);
-                    printf("Dados exportados para '%s'.\n", filename);
-                }
+                // Nota: csv_file já é fechado dentro de run_continuous_monitoring()
+                // se for diferente de NULL
             }
-
         } else if (choice != 2) {
-
             printf("Opção inválida.\n");
-
             sleep(1);
-
         }
-
     }
-
 }
 
 
 
 void handle_namespace_menu() {
-
     int choice = 0;
-
     while (choice != 5) {
-
         print_namespace_submenu();
-
         printf("Opção do Namespace Analyzer: ");
-
         if (scanf("%d", &choice) != 1) {
-
             flush_stdin_line();
-
             choice = 0;
-
             continue;
-
         }
-
         flush_stdin_line();
 
-
-
         switch (choice) {
-
             case 1: {
-
                 int pid = select_process();
-
                 if (pid != -1) {
-
                     list_process_namespaces(pid);
-
                     wait_for_enter();
-
                 }
-
                 break;
-
             }
-
             case 2: {
-
                 find_processes_in_namespace();
-
                 wait_for_enter();
-
                 break;
-
             }
-
             case 3: {
-
                 printf("\n--- Selecione o PRIMEIRO processo ---\n");
-
                 int pid1 = select_process();
-
                 if (pid1 != -1) {
-
                     printf("\n--- Selecione o SEGUNDO processo ---\n");
-
                     int pid2 = select_process();
-
                     if (pid2 != -1) {
-
                         compare_process_namespaces(pid1, pid2);
-
                         wait_for_enter();
-
                     }
-
                 }
-
                 break;
-
             }
-
             case 4: {
-
                 generate_json_namespace_report();
-
                 wait_for_enter();
-
                 break;
-
             }
-
             case 5:
-
                 // Voltar ao menu principal
-
                 break;
-
             default:
-
                 printf("Opção inválida.\n");
-
                 sleep(1);
-
                 break;
-
         }
-
     }
-
 }
 
+void handle_experiments_menu() {
+    int choice = 0;
+    int result = 0;
 
+    while (choice != 7) {
+        print_experiments_submenu();
+        printf("Opção de Experimento: ");
+        if (scanf("%d", &choice) != 1) {
+            flush_stdin_line();
+            choice = 0;
+            continue;
+        }
+        flush_stdin_line();
+
+        switch (choice) {
+            case 1:
+                printf("\n>>> Executando TODOS os experimentos...\n");
+                result = system("bash scripts/run_experiments.sh");
+                if (result == 0) {
+                    printf("\n✓ Experimentos concluídos com sucesso!\n");
+                } else {
+                    printf("\n✗ Alguns experimentos falharam. Verifique os logs.\n");
+                }
+                wait_for_enter();
+                break;
+            case 2:
+                printf("\n>>> Experimento 1: Overhead de Monitoramento\n");
+                result = system("bash scripts/experimento1_overhead.sh");
+                wait_for_enter();
+                break;
+            case 3:
+                printf("\n>>> Experimento 2: Isolamento via Namespaces\n");
+                result = system("bash scripts/experimento2_namespaces.sh");
+                wait_for_enter();
+                break;
+            case 4:
+                printf("\n>>> Experimento 3: Throttling de CPU (requer sudo)\n");
+                if (getuid() != 0) {
+                    printf("⚠  ATENÇÃO: Este experimento requer privilégios de root.\n");
+                    printf("   Execute o programa com sudo ou rode: sudo bash scripts/experimento3_cpu_throttle.sh\n");
+                } else {
+                    result = system("bash scripts/experimento3_cpu_throttle.sh");
+                }
+                wait_for_enter();
+                break;
+            case 5:
+                printf("\n>>> Experimento 4: Limitação de Memória (requer sudo)\n");
+                if (getuid() != 0) {
+                    printf("⚠  ATENÇÃO: Este experimento requer privilégios de root.\n");
+                    printf("   Execute o programa com sudo ou rode: sudo bash scripts/experimento4_mem_limit.sh\n");
+                } else {
+                    result = system("bash scripts/experimento4_mem_limit.sh");
+                }
+                wait_for_enter();
+                break;
+            case 6:
+                printf("\n>>> Experimento 5: Limitação de I/O (requer sudo)\n");
+                if (getuid() != 0) {
+                    printf("⚠  ATENÇÃO: Este experimento requer privilégios de root.\n");
+                    printf("   Execute o programa com sudo ou rode: sudo bash scripts/experimento5_io_limit.sh\n");
+                } else {
+                    result = system("bash scripts/experimento5_io_limit.sh");
+                }
+                wait_for_enter();
+                break;
+            case 7:
+                // Voltar ao menu principal
+                break;
+            default:
+                printf("Opção inválida.\n");
+                sleep(1);
+                break;
+        }
+    }
+}
 
 void handle_cgroup_manager_menu() {
 
@@ -720,37 +678,13 @@ void handle_cgroup_manager_menu() {
 
 
     while (choice != 6) {
-
-
-
         print_cgroup_submenu();
-
-
-
         printf("Opção do CGroup Manager: ");
-
-
-
         if (scanf("%d", &choice) != 1) {
-
-
-
             flush_stdin_line();
-
-
-
             choice = 0;
-
-
-
             continue;
-
-
-
         }
-
-
-
         flush_stdin_line();
 
 
@@ -760,230 +694,68 @@ void handle_cgroup_manager_menu() {
 
 
         switch (choice) {
-
-
-
-                                    case 1: {
-
-
-
-                                        char *cgroup_path = select_cgroup();
-
-
-
-                                        if (cgroup_path != NULL) {
-
-
-
-                                            display_cgroup_metrics(cgroup_version, cgroup_path);
-
-
-
-                                            free(cgroup_path); // Free the dynamically allocated path
-
-
-
-                                            wait_for_enter();
-
-
-
-                                        }
-
-
-
-                                        break;
-
-
-
-                                    }
-
-
-
-                        case 2: {
-
-
-
-                            char cgroup_name[256];
-
-
-
-                            char parent_path[256];
-
-
-
-            
-
-
-
-                            printf("Digite o nome do novo cgroup (ex: 'meu_teste'): ");
-
-
-
-                            if (fgets(cgroup_name, sizeof(cgroup_name), stdin) == NULL) {
-
-
-
-                                printf("Erro ao ler o nome do cgroup.\n");
-
-
-
-                                break;
-
-
-
-                            }
-
-
-
-                            cgroup_name[strcspn(cgroup_name, "\n")] = 0; // Remove newline
-
-
-
-            
-
-
-
-                            if (strlen(cgroup_name) == 0) {
-
-
-
-                                printf("Nome do cgroup não pode ser vazio.\n");
-
-
-
-                                break;
-
-
-
-                            }
-
-
-
-            
-
-
-
-                            printf("Digite o caminho relativo do cgroup pai (ex: '/' para raiz, 'user.slice'). Pressione Enter para usar a raiz: ");
-
-
-
-                            if (fgets(parent_path, sizeof(parent_path), stdin) == NULL) {
-
-
-
-                                printf("Erro ao ler o caminho do cgroup pai.\n");
-
-
-
-                                break;
-
-
-
-                            }
-
-
-
-                            parent_path[strcspn(parent_path, "\n")] = 0; // Remove newline
-
-
-
-            
-
-
-
-                            if (create_cgroup(cgroup_version, parent_path, cgroup_name) == 0) {
-
-
-
-                                printf("Cgroup criado com sucesso (verifique as mensagens acima).\n");
-
-
-
-                            } else {
-
-
-
-                                printf("Falha ao criar cgroup.\n");
-
-
-
-                            }
-
-
-
-                            wait_for_enter();
-
-
-
-                            break;
-
-
-
+            case 1: {
+                char *cgroup_path = select_cgroup();
+                if (cgroup_path != NULL) {
+                    display_cgroup_metrics(cgroup_version, cgroup_path);
+                    free(cgroup_path); // Free the dynamically allocated path
+                    wait_for_enter();
+                }
+                break;
+            }
+
+
+
+            case 2: {
+                char cgroup_name[MAX_BUFFER_LENGTH];
+                char parent_path[MAX_BUFFER_LENGTH];
+
+                printf("Digite o nome do novo cgroup (ex: 'meu_teste'): ");
+                if (fgets(cgroup_name, sizeof(cgroup_name), stdin) == NULL) {
+                    printf("Erro ao ler o nome do cgroup.\n");
+                    break;
+                }
+                cgroup_name[strcspn(cgroup_name, "\n")] = 0; // Remove newline
+
+                if (strlen(cgroup_name) == 0) {
+                    printf("Nome do cgroup não pode ser vazio.\n");
+                    break;
+                }
+
+                printf("Digite o caminho relativo do cgroup pai (ex: '/' para raiz, 'user.slice'). Pressione Enter para usar a raiz: ");
+                if (fgets(parent_path, sizeof(parent_path), stdin) == NULL) {
+                    printf("Erro ao ler o caminho do cgroup pai.\n");
+                    break;
+                }
+                parent_path[strcspn(parent_path, "\n")] = 0; // Remove newline
+
+                if (create_cgroup(cgroup_version, parent_path, cgroup_name) == 0) {
+                    printf("Cgroup criado com sucesso (verifique as mensagens acima).\n");
+                } else {
+                    printf("Falha ao criar cgroup.\n");
+                }
+                wait_for_enter();
+                break;
+            }
+
+
+
+            case 3: {
+                int pid = select_process();
+                if (pid != -1) {
+                    char *cgroup_path = select_cgroup();
+                    if (cgroup_path != NULL) {
+                        if (move_process_to_cgroup(cgroup_version, pid, cgroup_path) == 0) {
+                            printf("Processo movido com sucesso (verifique as mensagens acima).\n");
+                        } else {
+                            printf("Falha ao mover processo para cgroup.\n");
                         }
-
-
-
-                        case 3: {
-
-
-
-                            int pid = select_process();
-
-
-
-                            if (pid != -1) {
-
-
-
-                                char *cgroup_path = select_cgroup();
-
-
-
-                                if (cgroup_path != NULL) {
-
-
-
-                                    if (move_process_to_cgroup(cgroup_version, pid, cgroup_path) == 0) {
-
-
-
-                                        printf("Processo movido com sucesso (verifique as mensagens acima).\n");
-
-
-
-                                    } else {
-
-
-
-                                        printf("Falha ao mover processo para cgroup.\n");
-
-
-
-                                    }
-
-
-
-                                    free(cgroup_path); // Free the dynamically allocated path
-
-
-
-                                    wait_for_enter();
-
-
-
-                                }
-
-
-
-                            }
-
-
-
-                            break;
-
-
-
-                        }
+                        free(cgroup_path); // Free the dynamically allocated path
+                        wait_for_enter();
+                    }
+                }
+                break;
+            }
 
 
 
@@ -1012,41 +784,14 @@ void handle_cgroup_manager_menu() {
 
 
             case 6:
-
-
-
                 // Voltar ao menu principal
-
-
-
                 break;
-
-
-
             default:
-
-
-
                 printf("Opção inválida.\n");
-
-
-
                 sleep(1);
-
-
-
                 break;
-
-
-
         }
-
-
-
     }
-
-
-
 }
 
 
@@ -1059,8 +804,8 @@ void handle_cgroup_manager_menu() {
 
 int main(int argc, char *argv[]) {
     pid_t batch_pid = -1;
-    int batch_interval = 1;
-    int batch_samples = 10;
+    int batch_interval = DEFAULT_BATCH_INTERVAL;
+    int batch_samples = DEFAULT_BATCH_SAMPLES;
     const char *batch_output = NULL;
 
     for (int i = 1; i < argc; i++) {
@@ -1130,7 +875,7 @@ int main(int argc, char *argv[]) {
     }
 
     int choice = 0;
-    while (choice != 4) {
+    while (choice != 5) {
         print_main_menu();
         printf("Opção principal: ");
         if (scanf("%d", &choice) != 1) {
@@ -1151,6 +896,9 @@ int main(int argc, char *argv[]) {
                 handle_cgroup_manager_menu();
                 break;
             case 4:
+                handle_experiments_menu();
+                break;
+            case 5:
                 printf("Saindo...\n");
                 break;
             default:

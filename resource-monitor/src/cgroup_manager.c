@@ -630,8 +630,11 @@ int apply_resource_limits(CgroupVersion version, const char* relative_cgroup_pat
         if (strcmp(relative_cgroup_path, "/") == 0 || strcmp(relative_cgroup_path, "") == 0) {
             snprintf(full_cgroup_path_base, sizeof(full_cgroup_path_base), "/sys/fs/cgroup");
         } else {
-            snprintf(full_cgroup_path_base, sizeof(full_cgroup_path_base), "/sys/fs/cgroup%s", 
-                     relative_cgroup_path[0] == '/' ? relative_cgroup_path : strcat(strcpy(input_buffer, "/"), relative_cgroup_path));
+            if (relative_cgroup_path[0] == '/') {
+                snprintf(full_cgroup_path_base, sizeof(full_cgroup_path_base), "/sys/fs/cgroup%s", relative_cgroup_path);
+            } else {
+                snprintf(full_cgroup_path_base, sizeof(full_cgroup_path_base), "/sys/fs/cgroup/%s", relative_cgroup_path);
+            }
         }
         printf("\n--- Aplicando Limites para CGroup v2: %s ---\n", full_cgroup_path_base);
     } else if (version == CGROUP_V1) {

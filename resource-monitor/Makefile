@@ -25,7 +25,7 @@ TEST_SOURCES = $(wildcard $(TESTDIR)/*.c)
 TEST_BINARIES = $(patsubst $(TESTDIR)/%.c,$(TESTBINDIR)/%,$(TEST_SOURCES))
 
 # Phony targets are not files
-.PHONY: all clean run workloads tests-clean
+.PHONY: all clean run workloads tests-clean experimentos exp1 exp2 exp3 exp4 exp5
 
 # Default target: build the executable
 all: $(TARGET)
@@ -57,3 +57,22 @@ $(TESTBINDIR)/%: $(TESTDIR)/%.c
 
 tests-clean:
 	rm -rf $(TESTBINDIR)
+
+# Targets para executar experimentos
+experimentos: all workloads
+	@bash scripts/run_experiments.sh
+
+exp1: all workloads
+	@bash scripts/experimento1_overhead.sh
+
+exp2: all workloads
+	@bash scripts/experimento2_namespaces.sh
+
+exp3: all workloads
+	@sudo bash scripts/experimento3_cpu_throttle.sh
+
+exp4: all workloads
+	@sudo bash scripts/experimento4_mem_limit.sh
+
+exp5: all workloads
+	@sudo bash scripts/experimento5_io_limit.sh

@@ -322,7 +322,8 @@ void generate_json_namespace_report(void) {
     printf("Deseja exibir o conteúdo do relatório gerado? (s/n): ");
     int user_choice = getchar();
     // Consume the rest of the line, especially the newline character
-    while (getchar() != '\n' && getchar() != EOF);
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
 
     if (user_choice == 's' || user_choice == 'S') {
         FILE *read_file_ptr = fopen(filename, "r");

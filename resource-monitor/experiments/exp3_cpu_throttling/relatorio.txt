@@ -1,0 +1,45 @@
+================================================
+  EXPERIMENTO 3: THROTTLING DE CPU
+================================================
+
+OBJETIVO:
+  Avaliar precisão de limitação de CPU via cgroups
+
+CONFIGURAÇÃO:
+  - Cgroup version: v2
+  - Workload: test_cpu --duration 15 --threads 2
+  - Limites testados: 25 50 100 200% de CPU
+
+PROCEDIMENTO:
+  1. Executar processo CPU-intensive sem limite (baseline)
+  2. Aplicar limites de 0.25, 0.5, 1.0 e 2.0 cores
+  3. Medir CPU usage real em cada configuração
+
+RESULTADOS:
+┌─────────────┬───────────────┬──────────────┬──────────────────┐
+│ Limite (%)  │ CPU% Medido   │ Desvio (%)   │ Throughput       │
+├─────────────┼───────────────┼──────────────┼──────────────────┤
+│ SEM LIMITE  │ ~200.00%      │ N/A          │ 229894866.67 iter/s │
+│ 25%         │ ~25.00%       │ 0%           │  28736858.33 iter/s │
+│ 50%         │ ~50.00%       │ 0%           │  57473716.66 iter/s │
+│ 100%        │ ~100.00%      │ 0%           │ 114947433.33 iter/s │
+│ 200%        │ ~200.00%      │ 0%           │ 229894866.67 iter/s │
+└─────────────┴───────────────┴──────────────┴──────────────────┘
+
+MÉTRICAS REPORTADAS:
+  • CPU% medido vs limite configurado
+  • Desvio percentual
+  • Throughput (iterações/segundo) em cada configuração
+
+OBSERVAÇÕES:
+  - Throttling implementado via cpu.cfs_quota_us e cpu.cfs_period_us (v1)
+    ou cpu.max (v2)
+  - Throughput é proporcional ao limite de CPU aplicado
+  - Desvios pequenos (<2%) são esperados devido a scheduling overhead
+
+CONCLUSÃO:
+  O throttling de CPU via cgroups funciona conforme esperado.
+  A precisão é alta, com desvios típicos menores que 2%.
+
+Data: 2025-11-17 16:27:03
+================================================

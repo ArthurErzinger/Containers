@@ -1,0 +1,42 @@
+================================================
+  EXPERIMENTO 1: OVERHEAD DE MONITORAMENTO
+================================================
+
+OBJETIVO:
+  Medir o impacto do próprio profiler no sistema
+
+CONFIGURAÇÃO:
+  - Workload: test_cpu --duration 20 --threads 2
+  - Intervalos testados: 1 3 5 segundos
+
+PROCEDIMENTO:
+  1. Executar workload de referência SEM monitoramento (baseline)
+  2. Executar mesmo workload COM monitoramento em diferentes intervalos
+  3. Medir diferenças em tempo de execução
+
+RESULTADOS:
+┌──────────────────────┬──────────────┬────────────────┬──────────────┐
+│ Configuração         │ Tempo (s)    │ Overhead (s)   │ Overhead (%) │
+├──────────────────────┼──────────────┼────────────────┼──────────────┤
+│ SEM monitoramento    │ 20.009       │ -              │ -            │
+│ COM monitoramento 1s │ 20.033       │ 0.024          │ 0.00         │
+│ COM monitoramento 3s │ 20.002       │ -0.007         │ 0.00         │
+│ COM monitoramento 5s │ 20.007       │ -0.002         │ 0.00         │
+└──────────────────────┴──────────────┴────────────────┴──────────────┘
+
+MÉTRICAS REPORTADAS:
+  • Tempo de execução com e sem profiler
+  • CPU overhead (tempo adicional)
+  • Overhead percentual
+  • Latência de sampling (intervalo configurado)
+
+OBSERVAÇÕES:
+  - Overhead aumenta com intervalos menores (mais samplings)
+  - Dados de métricas salvos em: /home/arthur/arthur/Containers/resource-monitor/experiments/exp1_overhead/metrics_*.csv
+
+CONCLUSÃO:
+  O profiler adiciona overhead de 0% a 0%
+  dependendo do intervalo de sampling.
+
+Data: 2025-11-17 16:15:53
+================================================
