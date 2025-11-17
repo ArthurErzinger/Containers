@@ -13,6 +13,18 @@
 #include "namespace.h"
 #include "cgroup.h"
 
+static void print_usage(const char *program_name) {
+    printf("Uso: %s [opções]\n", program_name);
+    printf("Opções disponíveis:\n");
+    printf("  -n, --namespace-report           Gera um relatório JSON dos namespaces ativos\n");
+    printf("  -c, --cgroup-report              Gera um relatório JSON do cgroup raiz (report.json)\n");
+    printf("  -m, --monitor <PID>              Executa o profiler em modo batch para o PID informado\n");
+    printf("      --interval <segundos>        Intervalo entre amostras no modo batch (padrão: 1s)\n");
+    printf("      --samples <quantidade>       Número de amostras a coletar no modo batch (padrão: 10)\n");
+    printf("  -o, --output <arquivo.csv>       Caminho de saída para salvar os dados do modo batch em CSV\n");
+    printf("\nSem opções, o programa abre o menu interativo completo.\n");
+}
+
 
 
 // --- Funções Utilitárias de UI ---
@@ -263,6 +275,90 @@ static void run_continuous_monitoring(pid_t pid, int interval, FILE *csv_output)
     }
 }
 
+static int run_batch_monitoring(pid_t pid, int interval, int samples, const char *csv_path) {
+    if (pid <= 0 || interval <= 0 || samples <= 0) {
+        fprintf(stderr, "Parâmetros inválidos para o modo batch.\n");
+        return -1;
+    }
+
+    FILE *csv_fp = NULL;
+    if (csv_path != NULL && strlen(csv_path) > 0) {
+        csv_fp = fopen(csv_path, "w");
+        if (csv_fp == NULL) {
+            perror("Erro ao abrir arquivo CSV para modo batch");
+            return -1;
+        }
+        write_csv_header(csv_fp);
+    }
+
+    CpuMetrics prev_cpu, curr_cpu;
+    IoMetrics prev_io, curr_io;
+    MemoryMetrics mem;
+    NetworkMetrics net;
+    unsigned long prev_global = 0, curr_global = 0;
+    int rc = 0;
+
+    if (get_cpu_metrics(pid, &prev_cpu) != 0 ||
+        get_io_metrics(pid, &prev_io) != 0 ||
+        get_global_cpu_time(&prev_global) != 0) {
+        fprintf(stderr, "Não foi possível coletar as métricas iniciais para o PID %d.\n", pid);
+        if (csv_fp) {
+            fclose(csv_fp);
+        }
+        return -1;
+    }
+
+    printf("Modo batch iniciado para PID %d (%d amostras, intervalo %ds).\n", pid, samples, interval);
+
+    for (int sample = 1; sample <= samples; sample++) {
+        sleep(interval);
+
+        if (get_cpu_metrics(pid, &curr_cpu) != 0 ||
+            get_memory_metrics(pid, &mem) != 0 ||
+            get_io_metrics(pid, &curr_io) != 0 ||
+            get_network_metrics(pid, &net) != 0 ||
+            get_global_cpu_time(&curr_global) != 0) {
+            fprintf(stderr, "Falha ao coletar métricas para o PID %d (amostra %d).\n", pid, sample);
+            rc = -1;
+            break;
+        }
+
+        long num_cpu_cores = sysconf(_SC_NPROCESSORS_ONLN);
+        if (num_cpu_cores < 1) {
+            num_cpu_cores = 1;
+        }
+
+        unsigned long process_ticks_delta = (curr_cpu.utime + curr_cpu.stime) - (prev_cpu.utime + prev_cpu.stime);
+        unsigned long total_cpu_delta = curr_global - prev_global;
+        double cpu_percentage = 0.0;
+        if (total_cpu_delta > 0) {
+            cpu_percentage = 100.0 * (double)process_ticks_delta / (double)total_cpu_delta * num_cpu_cores;
+        }
+
+        double read_rate_bps = (double)(curr_io.read_bytes - prev_io.read_bytes) / interval;
+        double write_rate_bps = (double)(curr_io.write_bytes - prev_io.write_bytes) / interval;
+
+        printf("Amostra %d/%d | CPU: %.2f%% | RSS: %ld KB | Leitura: %.2f B/s | Escrita: %.2f B/s\n",
+               sample, samples, cpu_percentage, mem.vm_rss_kb, read_rate_bps, write_rate_bps);
+
+        if (csv_fp) {
+            write_csv_data(csv_fp, pid, cpu_percentage, read_rate_bps, write_rate_bps,
+                           &curr_cpu, &mem, &curr_io, &net);
+        }
+
+        prev_cpu = curr_cpu;
+        prev_io = curr_io;
+        prev_global = curr_global;
+    }
+
+    if (csv_fp) {
+        fclose(csv_fp);
+        printf("CSV salvo em '%s'.\n", csv_path);
+    }
+
+    return rc;
+}
+
 
 // --- Funções de Menu ---
 
@@ -437,7 +533,10 @@ void handle_profiler_menu() {
 
 
                 run_continuous_monitoring(selected_pid, interval, csv_file);
-
+                if (csv_file != NULL) {
+                    fclose(csv_file);
+                    printf("Dados exportados para '%s'.\n", filename);
+                }
             }
 
         } else if (choice != 2) {
@@ -959,13 +1058,16 @@ void handle_cgroup_manager_menu() {
 
 
 int main(int argc, char *argv[]) {
-    // Check for command-line arguments for direct report generation
+    pid_t batch_pid = -1;
+    int batch_interval = 1;
+    int batch_samples = 10;
+    const char *batch_output = NULL;
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-n") == 0 || strcmp(argv[i], "--namespace-report") == 0) {
             generate_json_namespace_report();
-            return 0; // Exit after generating the report
-        }
-        if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--cgroup-report") == 0) {
+            return 0;
+        } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--cgroup-report") == 0) {
             CgroupVersion cgroup_version = get_cgroup_version();
             if (cgroup_version != CGROUP_UNKNOWN) {
                 generate_cgroup_report(cgroup_version, "/", "report.json");
@@ -973,8 +1075,58 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Erro: Não foi possível determinar a versão do cgroup.\n");
                 return 1;
             }
-            return 0; // Exit after generating the report
+            return 0;
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        } else if (strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--monitor") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Erro: --monitor requer um PID.\n");
+                return 1;
+            }
+            batch_pid = (pid_t)atoi(argv[++i]);
+            if (batch_pid <= 0) {
+                fprintf(stderr, "Erro: PID inválido informado para --monitor.\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interval") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Erro: --interval requer um valor em segundos.\n");
+                return 1;
+            }
+            batch_interval = atoi(argv[++i]);
+            if (batch_interval <= 0) {
+                fprintf(stderr, "Erro: --interval deve ser um inteiro positivo.\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--samples") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Erro: --samples requer um valor inteiro.\n");
+                return 1;
+            }
+            batch_samples = atoi(argv[++i]);
+            if (batch_samples <= 0) {
+                fprintf(stderr, "Erro: --samples deve ser um inteiro positivo.\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Erro: --output requer um caminho para o arquivo CSV.\n");
+                return 1;
+            }
+            batch_output = argv[++i];
+        } else {
+            fprintf(stderr, "Opção desconhecida: %s\n", argv[i]);
+            print_usage(argv[0]);
+            return 1;
         }
+    }
+
+    if (batch_pid > 0) {
+        if (run_batch_monitoring(batch_pid, batch_interval, batch_samples, batch_output) != 0) {
+            return 1;
+        }
+        return 0;
     }
 
     int choice = 0;

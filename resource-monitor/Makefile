@@ -11,6 +11,8 @@ TARGET = resource-monitor
 SRCDIR = src
 INCDIR = include
 OBJDIR = obj
+TESTDIR = tests
+TESTBINDIR = $(TESTDIR)/bin
 
 # Find all .c files in the source directory
 SOURCES = $(wildcard $(SRCDIR)/*.c)
@@ -18,8 +20,12 @@ SOURCES = $(wildcard $(SRCDIR)/*.c)
 # Create a list of object files in the obj directory
 OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
 
+# Test/workload binaries
+TEST_SOURCES = $(wildcard $(TESTDIR)/*.c)
+TEST_BINARIES = $(patsubst $(TESTDIR)/%.c,$(TESTBINDIR)/%,$(TEST_SOURCES))
+
 # Phony targets are not files
-.PHONY: all clean run
+.PHONY: all clean run workloads tests-clean
 
 # Default target: build the executable
 all: $(TARGET)
@@ -36,8 +42,18 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 
 # Target to clean up build files
 clean:
-	rm -rf $(OBJDIR) $(TARGET)
+	rm -rf $(OBJDIR) $(TARGET) $(TESTBINDIR)
 
 # Target to run the executable
 run: all
 	./$(TARGET)
+
+# Build workload/test helpers
+workloads: $(TEST_BINARIES)
+
+$(TESTBINDIR)/%: $(TESTDIR)/%.c
+	@mkdir -p $(TESTBINDIR)
+	$(CC) $(CFLAGS) -pthread $< -o $@
+
+tests-clean:
+	rm -rf $(TESTBINDIR)
