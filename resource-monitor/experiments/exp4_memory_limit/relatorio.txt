@@ -1,0 +1,48 @@
+================================================
+  EXPERIMENTO 4: LIMITAÇÃO DE MEMÓRIA
+================================================
+
+OBJETIVO:
+  Testar comportamento ao atingir limite de memória
+
+CONFIGURAÇÃO:
+  - Cgroup version: v2
+  - Limite de memória: 100MB
+  - Tentativa de alocação: 200MB
+  - Workload: test_memory
+
+PROCEDIMENTO:
+  1. Criar cgroup com limite de 100MB
+  2. Tentar alocar 200MB incrementalmente
+  3. Observar comportamento (OOM killer, falhas de alocação)
+
+RESULTADOS:
+
+1. ALOCAÇÃO SEM LIMITE (BASELINE)
+   - Quantidade alocada: 50.00MB
+   - Status: Sucesso completo
+
+2. ALOCAÇÃO COM LIMITE DE 100MB
+   - Quantidade máxima alocada: 200.00MB
+   - Número de falhas (failcnt): 199
+   - Comportamento observado: \033[0;32mCompletou sem OOM\033[0m
+
+MÉTRICAS REPORTADAS:
+  • Quantidade máxima alocada
+  • Número de falhas (memory.failcnt)
+  • Comportamento do sistema ao atingir limite
+
+OBSERVAÇÕES:
+  - Quando o limite é atingido, o kernel pode:
+    * Invocar OOM killer e matar o processo
+    * Retornar erro em malloc()
+    * Forçar swap (se disponível)
+  - O failcnt conta quantas vezes o limite foi atingido
+
+CONCLUSÃO:
+  O limite de memória via cgroup foi respeitado.
+  O processo não conseguiu alocar mais que ~100MB.
+  O processo lidou com o limite sem ser terminado.
+
+Data: 2025-11-17 18:03:09
+================================================

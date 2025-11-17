@@ -159,13 +159,10 @@ Relatórios de namespaces e cgroups são exportados em formato JSON estruturado.
 3. **Processos Privilegiados:** Alguns processos do sistema podem não ser acessíveis sem root
 4. **Leitura de /proc/[pid]/io:** Requer permissão de leitura no processo alvo
 
-## 👥 Autores e Contribuições
+## 👥 Autor e Contribuição
 
-**Equipe de Desenvolvimento:**
-- Arthur - Resource Profiler e Integração
-- [Contribuidor 2] - Namespace Analyzer
-- [Contribuidor 3] - Control Group Manager
-- [Contribuidor 4] - Testes e Validação
+**Autor:**
+- Arthur Erzinger de Lima (Desenvolvimento completo do sistema, incluindo Resource Profiler, Namespace Analyzer, Control Group Manager, scripts de experimento e documentação.)
 
 ## 📝 Licença
 

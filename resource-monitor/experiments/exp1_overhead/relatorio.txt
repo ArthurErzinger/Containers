@@ -18,10 +18,10 @@ RESULTADOS:
 ┌──────────────────────┬──────────────┬────────────────┬──────────────┐
 │ Configuração         │ Tempo (s)    │ Overhead (s)   │ Overhead (%) │
 ├──────────────────────┼──────────────┼────────────────┼──────────────┤
-│ SEM monitoramento    │ 20.009       │ -              │ -            │
-│ COM monitoramento 1s │ 20.033       │ 0.024          │ 0.00         │
-│ COM monitoramento 3s │ 20.002       │ -0.007         │ 0.00         │
-│ COM monitoramento 5s │ 20.007       │ -0.002         │ 0.00         │
+│ SEM monitoramento    │ 20.007       │ -              │ -            │
+│ COM monitoramento 1s │ 20.031       │ 0.024          │ 0.00         │
+│ COM monitoramento 3s │ 20.002       │ -0.005         │ 0.00         │
+│ COM monitoramento 5s │ 20.006       │ -0.001         │ 0.00         │
 └──────────────────────┴──────────────┴────────────────┴──────────────┘
 
 MÉTRICAS REPORTADAS:
@@ -38,5 +38,5 @@ CONCLUSÃO:
   O profiler adiciona overhead de 0% a 0%
   dependendo do intervalo de sampling.
 
-Data: 2025-11-17 16:15:53
+Data: 2025-11-17 17:57:32
 ================================================
