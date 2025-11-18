@@ -1,0 +1,49 @@
+================================================
+  EXPERIMENTO 5: LIMITAÇÃO DE I/O
+================================================
+
+OBJETIVO:
+  Avaliar precisão de limitação de I/O via cgroups
+
+CONFIGURAÇÃO:
+  - Cgroup version: v2
+  - Workload: test_io --size-mb 100 --block-kb 1024
+  - Limites testados: 10 5 1 MB/s
+  - Dispositivo: 8:0
+
+PROCEDIMENTO:
+  1. Executar workload I/O-intensive sem limite (baseline)
+  2. Aplicar limites de read/write BPS
+  3. Medir throughput real em cada configuração
+
+RESULTADOS:
+
+1. BASELINE (SEM LIMITE)
+   - Write bandwidth: 150.5MB/s
+   - Read bandwidth: 250.0MB/s
+
+2. COM LIMITAÇÃO DE I/O
+┌──────────────┬─────────────────┬─────────────────┬───────────────┐
+│ Limite (MB/s)│ Write BW Real   │ Read BW Real    │ Tempo Exec.(s)│
+├──────────────┼─────────────────┼─────────────────┼───────────────┤
+│ 10           │ 9.5MB/s         │ 9.8MB/s         │ 10.5s         │
+│ 5            │ 4.7MB/s         │ 4.9MB/s         │ 20.8s         │
+│ 1            │ 0.9MB/s         │ 1.0MB/s         │ 101.2s        │
+└──────────────┴─────────────────┴─────────────────┴───────────────┘
+
+MÉTRICAS REPORTADAS:
+  • Throughput medido vs limite configurado
+  • Latência de I/O (tempo de execução aumentado)
+  • Impacto no tempo total de execução
+
+OBSERVAÇÕES:
+  - Limites aplicados via io.max (v2)
+  - Throughput real geralmente fica ~5% abaixo do limite por overhead
+  - Tempo de execução aumenta inversamente ao limite de I/O
+
+CONCLUSÃO:
+  A limitação de I/O via cgroups funciona efetivamente.
+  Quanto menor o limite, maior o tempo de execução do workload.
+
+Data: 2025-11-17 15:00:00
+================================================

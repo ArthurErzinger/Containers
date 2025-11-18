@@ -1,0 +1,29 @@
+{
+  "namespaces": [
+    {
+      "type": "pid",
+      "count": 5
+    },
+    {
+      "type": "net",
+      "count": 3
+    },
+    {
+      "type": "mnt",
+      "count": 4
+    },
+    {
+      "type": "uts",
+      "count": 3
+    },
+    {
+      "type": "ipc",
+      "count": 3
+    },
+    {
+      "type": "user",
+      "count": 6
+    }
+  ],
+  "total_processes": 254
+}
